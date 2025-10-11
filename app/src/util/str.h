@@ -155,4 +155,10 @@ sc_str_remove_trailing_cr(char *s, size_t len);
 char *
 sc_str_to_hex_string(const uint8_t *data, size_t len);
 
+/**
+ * Generate JSON string for mouse click event
+ */
+void
+sc_json_event(const char *event, const char *data);
+
 #endif

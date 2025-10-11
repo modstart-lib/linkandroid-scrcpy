@@ -16,10 +16,10 @@
 #include "util/net.h"
 #include "util/thread.h"
 #include "version.h"
+#include "util/str.h"
 
 #ifdef _WIN32
 #include <windows.h>
-#include "util/str.h"
 #endif
 
 static int
@@ -31,8 +31,7 @@ main_scrcpy(int argc, char *argv[]) {
     setbuf(stderr, NULL);
 #endif
 
-    printf("scrcpy " SCRCPY_VERSION
-           " <https://github.com/Genymobile/scrcpy>\n");
+    printf("linkandroid-scrcpy " SCRCPY_VERSION "\n");
 
     struct scrcpy_cli_args args = {
         .opts = scrcpy_options_default,
@@ -93,6 +92,9 @@ main_scrcpy(int argc, char *argv[]) {
 #endif
 
 end:
+
+    sc_json_event("End","{}");
+
     if (args.pause_on_exit == SC_PAUSE_ON_EXIT_TRUE ||
             (args.pause_on_exit == SC_PAUSE_ON_EXIT_IF_ERROR &&
                 ret != SCRCPY_EXIT_SUCCESS)) {

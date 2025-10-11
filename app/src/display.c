@@ -6,6 +6,7 @@
 #include <libavutil/pixfmt.h>
 
 #include "util/log.h"
+#include "util/str.h"
 
 static bool
 sc_display_init_novideo_icon(struct sc_display *display,
@@ -42,6 +43,8 @@ sc_display_init(struct sc_display *display, SDL_Window *window,
     int r = SDL_GetRendererInfo(display->renderer, &renderer_info);
     const char *renderer_name = r ? NULL : renderer_info.name;
     LOGI("Renderer: %s", renderer_name ? renderer_name : "(unknown)");
+    
+    sc_json_event("Started", "{}");
 
     display->mipmaps = false;
 

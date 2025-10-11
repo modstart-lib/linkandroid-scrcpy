@@ -83,107 +83,107 @@ jobs:
       - name: Test
         run: release/test_client.sh
 
-  build-linux-x86_64:
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Check architecture
-        run: |
-            arch=$(uname -m)
-            if [[ "$arch" != x86_64 ]]
-            then
-                echo "Unexpected architecture: $arch" >&2
-                exit 1
-            fi
+#  build-linux-x86_64:
+#    runs-on: ubuntu-22.04
+#    steps:
+#      - name: Check architecture
+#        run: |
+#            arch=$(uname -m)
+#            if [[ "$arch" != x86_64 ]]
+#            then
+#                echo "Unexpected architecture: $arch" >&2
+#                exit 1
+#            fi
+#
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Install dependencies
+#        run: |
+#          sudo apt update
+#          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
+#             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
+#             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
+#             libv4l-dev
+#
+#      - name: Build
+#        run: release/build_linux.sh x86_64
+#
+#      # upload-artifact does not preserve permissions
+#      - name: Tar
+#        run: |
+#            cd release/work/build-linux-x86_64
+#            mkdir dist-tar
+#            cd dist-tar
+#            tar -C .. -cvf dist.tar.gz dist/
+#
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: build-linux-x86_64-intermediate
+#          path: release/work/build-linux-x86_64/dist-tar/
 
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
-             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
-             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
-             libv4l-dev
-
-      - name: Build
-        run: release/build_linux.sh x86_64
-
-      # upload-artifact does not preserve permissions
-      - name: Tar
-        run: |
-            cd release/work/build-linux-x86_64
-            mkdir dist-tar
-            cd dist-tar
-            tar -C .. -cvf dist.tar.gz dist/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-linux-x86_64-intermediate
-          path: release/work/build-linux-x86_64/dist-tar/
-
-  build-win32:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
-             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
-             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
-             mingw-w64 mingw-w64-tools libz-mingw-w64-dev
-
-      - name: Build
-        run: release/build_windows.sh 32
-
-      # upload-artifact does not preserve permissions
-      - name: Tar
-        run: |
-            cd release/work/build-win32
-            mkdir dist-tar
-            cd dist-tar
-            tar -C .. -cvf dist.tar.gz dist/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-win32-intermediate
-          path: release/work/build-win32/dist-tar/
-
-  build-win64:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
-             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
-             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
-             mingw-w64 mingw-w64-tools libz-mingw-w64-dev
-
-      - name: Build
-        run: release/build_windows.sh 64
-
-      # upload-artifact does not preserve permissions
-      - name: Tar
-        run: |
-            cd release/work/build-win64
-            mkdir dist-tar
-            cd dist-tar
-            tar -C .. -cvf dist.tar.gz dist/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-win64-intermediate
-          path: release/work/build-win64/dist-tar/
+#  build-win32:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Install dependencies
+#        run: |
+#          sudo apt update
+#          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
+#             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
+#             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
+#             mingw-w64 mingw-w64-tools libz-mingw-w64-dev
+#
+#      - name: Build
+#        run: release/build_windows.sh 32
+#
+#      # upload-artifact does not preserve permissions
+#      - name: Tar
+#        run: |
+#            cd release/work/build-win32
+#            mkdir dist-tar
+#            cd dist-tar
+#            tar -C .. -cvf dist.tar.gz dist/
+#
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: build-win32-intermediate
+#          path: release/work/build-win32/dist-tar/
+#
+#  build-win64:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Install dependencies
+#        run: |
+#          sudo apt update
+#          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
+#             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
+#             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
+#             mingw-w64 mingw-w64-tools libz-mingw-w64-dev
+#
+#      - name: Build
+#        run: release/build_windows.sh 64
+#
+#      # upload-artifact does not preserve permissions
+#      - name: Tar
+#        run: |
+#            cd release/work/build-win64
+#            mkdir dist-tar
+#            cd dist-tar
+#            tar -C .. -cvf dist.tar.gz dist/
+#
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: build-win64-intermediate
+#          path: release/work/build-win64/dist-tar/
 
   build-macos-aarch64:
     runs-on: macos-latest

@@ -380,7 +380,8 @@ sc_json_event(const char *event, const char *data) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     int64_t ms = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-    printf( "LAEvent:{\"event\":\"%s\",\"time\":\"%lld\",\"data\":%s}\n", 
+    LOGI( "LAEvent:{\"event\":\"%s\",\"time\":\"%lld\",\"data\":%s}\n",
         event, (long long)ms, data );
+    fflush(stdout);
 }
 

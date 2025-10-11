@@ -228,48 +228,48 @@ jobs:
           name: build-macos-aarch64-intermediate
           path: release/work/build-macos-aarch64/dist-tar/
 
-  build-macos-x86_64:
-    runs-on: macos-13
-    steps:
-      - name: Check architecture
-        run: |
-            arch=$(uname -m)
-            if [[ "$arch" != x86_64 ]]
-            then
-                echo "Unexpected architecture: $arch" >&2
-                exit 1
-            fi
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: brew install meson nasm libiconv zlib automake
-             # autoconf and libtool are already installed on macos-13
-
-      - name: Build
-        env:
-          # the default Xcode (and macOS SDK) version can be found at
-          # <https://github.com/actions/runner-images/blob/main/images/macos/macos-13-Readme.md#xcode>
-          #
-          # then the minimal supported deployment target of that macOS SDK can be found at
-          # <https://developer.apple.com/support/xcode/#minimum-requirements>
-          MACOSX_DEPLOYMENT_TARGET: 10.13
-        run: release/build_macos.sh x86_64
-
-      # upload-artifact does not preserve permissions
-      - name: Tar
-        run: |
-            cd release/work/build-macos-x86_64
-            mkdir dist-tar
-            cd dist-tar
-            tar -C .. -cvf dist.tar.gz dist/
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-macos-x86_64-intermediate
-          path: release/work/build-macos-x86_64/dist-tar/
+#  build-macos-x86_64:
+#    runs-on: macos-13
+#    steps:
+#      - name: Check architecture
+#        run: |
+#            arch=$(uname -m)
+#            if [[ "$arch" != x86_64 ]]
+#            then
+#                echo "Unexpected architecture: $arch" >&2
+#                exit 1
+#            fi
+#
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Install dependencies
+#        run: brew install meson nasm libiconv zlib automake
+#             # autoconf and libtool are already installed on macos-13
+#
+#      - name: Build
+#        env:
+#          # the default Xcode (and macOS SDK) version can be found at
+#          # <https://github.com/actions/runner-images/blob/main/images/macos/macos-13-Readme.md#xcode>
+#          #
+#          # then the minimal supported deployment target of that macOS SDK can be found at
+#          # <https://developer.apple.com/support/xcode/#minimum-requirements>
+#          MACOSX_DEPLOYMENT_TARGET: 10.13
+#        run: release/build_macos.sh x86_64
+#
+#      # upload-artifact does not preserve permissions
+#      - name: Tar
+#        run: |
+#            cd release/work/build-macos-x86_64
+#            mkdir dist-tar
+#            cd dist-tar
+#            tar -C .. -cvf dist.tar.gz dist/
+#
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: build-macos-x86_64-intermediate
+#          path: release/work/build-macos-x86_64/dist-tar/
 
 #  package-linux-x86_64:
 #    needs:

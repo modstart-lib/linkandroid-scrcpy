@@ -62,5 +62,5 @@ else
     "$SOURCES_DIR/$PROJECT_DIR"/configure "${conf[@]}"
 fi
 
-make -j
+make -j1
 make install-strip

@@ -69,7 +69,7 @@ else
     "$SOURCES_DIR/$PROJECT_DIR"/configure "${conf[@]}"
 fi
 
-make -j
+make -j1
 # There is no "make install-strip"
 make install
 # Strip manually

@@ -2,4 +2,4 @@
 
 debug:
 	cd x && ninja && cd ..;
-	./run x
+	./run x -V debug

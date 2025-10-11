@@ -3,6 +3,7 @@
 #include <assert.h>
 
 #include "util/log.h"
+#include "util/str.h"
 
 // Drop droppable events above this limit
 #define SC_CONTROL_MSG_QUEUE_LIMIT 60
@@ -89,11 +90,41 @@ sc_controller_destroy(struct sc_controller *controller) {
     sc_receiver_destroy(&controller->receiver);
 }
 
+
+
 bool
 sc_controller_push_msg(struct sc_controller *controller,
                        const struct sc_control_msg *msg) {
     if (sc_get_log_level() <= SC_LOG_LEVEL_VERBOSE) {
         sc_control_msg_log(msg);
+    }
+
+    if (msg->type == SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT) {
+        const char *action_str = NULL;
+        switch (msg->inject_touch_event.action & AMOTION_EVENT_ACTION_MASK) {
+            case AMOTION_EVENT_ACTION_DOWN:
+                action_str = "ActionDown";
+                break;
+            case AMOTION_EVENT_ACTION_MOVE:
+                action_str = "ActionMove";
+                break;
+            case AMOTION_EVENT_ACTION_UP:
+                action_str = "ActionUp";
+                break;
+            case AMOTION_EVENT_ACTION_CANCEL:
+                action_str = "ActionCancel";
+                break;
+            default:
+                // Do not log other actions
+                break;
+        }
+        if (action_str) {
+            char json[64];
+            sprintf(json, "{\"x\":%d,\"y\":%d}",
+                    msg->inject_touch_event.position.point.x,
+                    msg->inject_touch_event.position.point.y);
+            sc_json_event(action_str, json);
+        }
     }
 
     bool pushed = false;

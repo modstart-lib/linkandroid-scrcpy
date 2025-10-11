@@ -14,6 +14,7 @@
 # include <windows.h>
 #endif
 
+#include "cJSON.h"
 #include "audio_player.h"
 #include "controller.h"
 #include "decoder.h"
@@ -100,6 +101,124 @@ static BOOL WINAPI windows_ctrl_handler(DWORD ctrl_type) {
     return FALSE;
 }
 #endif // _WIN32
+
+static int
+event_thread(void *data) {
+
+    LOGI("EventWatching");
+
+    struct scrcpy *s = data;
+    char line[1024];
+
+#ifdef _WIN32
+    HANDLE stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
+#else
+    int stdin_fd = fileno(stdin);
+#endif
+
+    while (!s->controller.stopped) {
+#ifdef _WIN32
+        DWORD wait_result = WaitForSingleObject(stdin_handle, 100); // 100ms timeout
+        if (wait_result == WAIT_OBJECT_0) {
+            if (fgets(line, sizeof(line), stdin) == NULL) {
+                break; // End of file or error
+            }
+        } else if (wait_result == WAIT_TIMEOUT) {
+            continue; // Timeout, check controller->stopped
+        } else {
+            break; // Error
+        }
+#else
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(stdin_fd, &fds);
+
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000; // 100ms
+
+        int ret = select(stdin_fd + 1, &fds, NULL, NULL, &tv);
+        if (ret == -1) {
+            // Error
+            break;
+        }
+
+        if (ret == 0) {
+            // Timeout, check controller->stopped
+            continue;
+        }
+
+        if (!FD_ISSET(stdin_fd, &fds)) {
+            // Should not happen
+            continue;
+        }
+
+        if (fgets(line, sizeof(line), stdin) == NULL) {
+            break; // End of file or error
+        }
+#endif
+
+        if (strncmp(line, "LAEvent:", 8) != 0) {
+            continue;
+        }
+
+        char *json_string = line + 8;
+        cJSON *root = cJSON_Parse(json_string);
+        if (root == NULL) {
+            continue;
+        }
+
+        cJSON *event = cJSON_GetObjectItem(root, "event");
+        cJSON *data = cJSON_GetObjectItem(root, "data");
+        if (event == NULL || data == NULL) {
+            cJSON_Delete(root);
+            continue;
+        }
+
+        char *event_str = event->valuestring;
+        cJSON *x_json = cJSON_GetObjectItem(data, "x");
+        cJSON *y_json = cJSON_GetObjectItem(data, "y");
+
+        if (x_json == NULL || y_json == NULL) {
+            cJSON_Delete(root);
+            continue;
+        }
+
+        int x = x_json->valueint;
+        int y = y_json->valueint;
+
+        struct sc_control_msg msg;
+        msg.type = SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT;
+        msg.inject_touch_event.pointer_id = SC_POINTER_ID_MOUSE;
+        msg.inject_touch_event.pressure = 1.0f;
+        msg.inject_touch_event.action_button = 0;
+        msg.inject_touch_event.buttons = 0;
+        msg.inject_touch_event.position.point.x = x;
+        msg.inject_touch_event.position.point.y = y;
+        msg.inject_touch_event.position.screen_size = s->screen.frame_size;
+
+        bool up = false;
+        if (strcmp(event_str, "ActionDown") == 0) {
+            msg.inject_touch_event.action = AMOTION_EVENT_ACTION_DOWN;
+        } else if (strcmp(event_str, "ActionUp") == 0) {
+            msg.inject_touch_event.action = AMOTION_EVENT_ACTION_UP;
+            up = true;
+        } else if (strcmp(event_str, "ActionMove") == 0) {
+            msg.inject_touch_event.action = AMOTION_EVENT_ACTION_MOVE;
+        } else {
+            cJSON_Delete(root);
+            continue;
+        }
+        if(up){
+            msg.inject_touch_event.pressure = 0.0f;
+        }
+
+        sc_controller_push_msg(&s->controller, &msg);
+
+        cJSON_Delete(root);
+    }
+    return 0;
+}
 
 static void
 sdl_set_hints(const char *render_driver) {
@@ -942,6 +1061,14 @@ aoa_complete:
             LOGW("Could not request start app '%s'", name);
             free(name);
         }
+    }
+
+    sc_thread stdin_thread;
+    bool stdin_thread_created = false;
+    if (!sc_thread_create(&stdin_thread, event_thread, "event-thread", s)) {
+        LOGE("Could not start stdin thread");
+    } else {
+        stdin_thread_created = true;
     }
 
     ret = event_loop(s, options->window);

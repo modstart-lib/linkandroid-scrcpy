@@ -271,113 +271,113 @@ jobs:
           name: build-macos-x86_64-intermediate
           path: release/work/build-macos-x86_64/dist-tar/
 
-  package-linux-x86_64:
-    needs:
-      - build-scrcpy-server
-      - build-linux-x86_64
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+#  package-linux-x86_64:
+#    needs:
+#      - build-scrcpy-server
+#      - build-linux-x86_64
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Download scrcpy-server
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: scrcpy-server
+#          path: release/work/build-server/server/
+#
+#      - name: Download build-linux-x86_64
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: build-linux-x86_64-intermediate
+#          path: release/work/build-linux-x86_64/dist-tar/
+#
+#      # upload-artifact does not preserve permissions
+#      - name: Detar
+#        run: |
+#            cd release/work/build-linux-x86_64
+#            tar xf dist-tar/dist.tar.gz
+#
+#      - name: Package
+#        run: release/package_client.sh linux-x86_64 tar.gz
+#
+#      - name: Upload release
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: release-linux-x86_64
+#          path: release/output/
 
-      - name: Download scrcpy-server
-        uses: actions/download-artifact@v4
-        with:
-          name: scrcpy-server
-          path: release/work/build-server/server/
+#  package-win32:
+#    needs:
+#      - build-scrcpy-server
+#      - build-win32
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Download scrcpy-server
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: scrcpy-server
+#          path: release/work/build-server/server/
+#
+#      - name: Download build-win32
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: build-win32-intermediate
+#          path: release/work/build-win32/dist-tar/
+#
+#      # upload-artifact does not preserve permissions
+#      - name: Detar
+#        run: |
+#            cd release/work/build-win32
+#            tar xf dist-tar/dist.tar.gz
+#
+#      - name: Package
+#        run: release/package_client.sh win32 zip
+#
+#      - name: Upload release
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: release-win32
+#          path: release/output/
 
-      - name: Download build-linux-x86_64
-        uses: actions/download-artifact@v4
-        with:
-          name: build-linux-x86_64-intermediate
-          path: release/work/build-linux-x86_64/dist-tar/
-
-      # upload-artifact does not preserve permissions
-      - name: Detar
-        run: |
-            cd release/work/build-linux-x86_64
-            tar xf dist-tar/dist.tar.gz
-
-      - name: Package
-        run: release/package_client.sh linux-x86_64 tar.gz
-
-      - name: Upload release
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-linux-x86_64
-          path: release/output/
-
-  package-win32:
-    needs:
-      - build-scrcpy-server
-      - build-win32
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download scrcpy-server
-        uses: actions/download-artifact@v4
-        with:
-          name: scrcpy-server
-          path: release/work/build-server/server/
-
-      - name: Download build-win32
-        uses: actions/download-artifact@v4
-        with:
-          name: build-win32-intermediate
-          path: release/work/build-win32/dist-tar/
-
-      # upload-artifact does not preserve permissions
-      - name: Detar
-        run: |
-            cd release/work/build-win32
-            tar xf dist-tar/dist.tar.gz
-
-      - name: Package
-        run: release/package_client.sh win32 zip
-
-      - name: Upload release
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-win32
-          path: release/output/
-
-  package-win64:
-    needs:
-      - build-scrcpy-server
-      - build-win64
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download scrcpy-server
-        uses: actions/download-artifact@v4
-        with:
-          name: scrcpy-server
-          path: release/work/build-server/server/
-
-      - name: Download build-win64
-        uses: actions/download-artifact@v4
-        with:
-          name: build-win64-intermediate
-          path: release/work/build-win64/dist-tar/
-
-      # upload-artifact does not preserve permissions
-      - name: Detar
-        run: |
-            cd release/work/build-win64
-            tar xf dist-tar/dist.tar.gz
-
-      - name: Package
-        run: release/package_client.sh win64 zip
-
-      - name: Upload release
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-win64
-          path: release/output
+#  package-win64:
+#    needs:
+#      - build-scrcpy-server
+#      - build-win64
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Download scrcpy-server
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: scrcpy-server
+#          path: release/work/build-server/server/
+#
+#      - name: Download build-win64
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: build-win64-intermediate
+#          path: release/work/build-win64/dist-tar/
+#
+#      # upload-artifact does not preserve permissions
+#      - name: Detar
+#        run: |
+#            cd release/work/build-win64
+#            tar xf dist-tar/dist.tar.gz
+#
+#      - name: Package
+#        run: release/package_client.sh win64 zip
+#
+#      - name: Upload release
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: release-win64
+#          path: release/output
 
   package-macos-aarch64:
     needs:
@@ -415,50 +415,50 @@ jobs:
           name: release-macos-aarch64
           path: release/output/
 
-  package-macos-x86_64:
-    needs:
-      - build-scrcpy-server
-      - build-macos-x86_64
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download scrcpy-server
-        uses: actions/download-artifact@v4
-        with:
-          name: scrcpy-server
-          path: release/work/build-server/server/
-
-      - name: Download build-macos
-        uses: actions/download-artifact@v4
-        with:
-          name: build-macos-x86_64-intermediate
-          path: release/work/build-macos-x86_64/dist-tar/
-
-      # upload-artifact does not preserve permissions
-      - name: Detar
-        run: |
-            cd release/work/build-macos-x86_64
-            tar xf dist-tar/dist.tar.gz
-
-      - name: Package
-        run: release/package_client.sh macos-x86_64 tar.gz
-
-      - name: Upload release
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-macos-x86_64
-          path: release/output/
+#  package-macos-x86_64:
+#    needs:
+#      - build-scrcpy-server
+#      - build-macos-x86_64
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v4
+#
+#      - name: Download scrcpy-server
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: scrcpy-server
+#          path: release/work/build-server/server/
+#
+#      - name: Download build-macos
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: build-macos-x86_64-intermediate
+#          path: release/work/build-macos-x86_64/dist-tar/
+#
+#      # upload-artifact does not preserve permissions
+#      - name: Detar
+#        run: |
+#            cd release/work/build-macos-x86_64
+#            tar xf dist-tar/dist.tar.gz
+#
+#      - name: Package
+#        run: release/package_client.sh macos-x86_64 tar.gz
+#
+#      - name: Upload release
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: release-macos-x86_64
+#          path: release/output/
 
   release:
     needs:
       - build-scrcpy-server
-      - package-linux-x86_64
-      - package-win32
-      - package-win64
+#      - package-linux-x86_64
+#      - package-win32
+#      - package-win64
       - package-macos-aarch64
-      - package-macos-x86_64
+#      - package-macos-x86_64
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -506,8 +506,12 @@ jobs:
       - name: Generate checksums
         run: release/generate_checksums.sh
 
-      - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+      - name: Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: scrcpy-release-${{ env.VERSION }}
-          path: release/output
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: false
+          files: release/output/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

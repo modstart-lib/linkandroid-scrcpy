@@ -1,4 +1,5 @@
 src = [
+    '../deps/cjson/cJSON.c',
     'src/main.c',
     'src/adb/adb.c',
     'src/adb/adb_device.c',

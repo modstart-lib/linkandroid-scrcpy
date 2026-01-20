@@ -1,5 +1,4 @@
 src = [
-    '../deps/cjson/cJSON.c',
     'src/main.c',
     'src/adb/adb.c',
     'src/adb/adb_device.c',
@@ -179,7 +178,7 @@ conf.set('HAVE_USB', usb_support)
 
 configure_file(configuration: conf, output: 'config.h')
 
-src_dir = include_directories('src', '../deps/cjson')
+src_dir = include_directories('src')
 
 executable('scrcpy', src,
            dependencies: dependencies,

@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 
 #ifdef _WIN32
 # include <windows.h>
@@ -374,14 +373,3 @@ sc_str_to_hex_string(const uint8_t *data, size_t size) {
 
     return buffer;
 }
-
-void
-sc_json_event(const char *event, const char *data) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    int64_t ms = (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
-    LOGI( "LAEvent:{\"event\":\"%s\",\"time\":\"%lld\",\"data\":%s}\n",
-        event, (long long)ms, data );
-    fflush(stdout);
-}
-

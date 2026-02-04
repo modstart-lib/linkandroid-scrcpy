@@ -29,7 +29,7 @@ rm -rf "$MACOS_BUILD_DIR"
 meson setup "$MACOS_BUILD_DIR" \
     --pkg-config-path="$DEPS_INSTALL_DIR/lib/pkgconfig" \
     -Dc_args="-I$DEPS_INSTALL_DIR/include -I$OPENSSL_PREFIX/include" \
-    -Dc_link_args="-L$DEPS_INSTALL_DIR/lib -L$OPENSSL_PREFIX/lib" \
+    -Dc_link_args="-L$DEPS_INSTALL_DIR/lib -L$OPENSSL_PREFIX/lib -lssl -lcrypto" \
     --buildtype=release \
     --strip \
     -Db_lto=true \

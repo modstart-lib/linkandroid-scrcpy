@@ -140,6 +140,11 @@ if static
     if libev_dep.found()
         dependencies += libev_dep
     endif
+
+    openssl_dep = dependency('openssl', required: false, static: static)
+    if openssl_dep.found()
+        dependencies += openssl_dep
+    endif
 endif
 
 # Try to find SDL2_ttf (optional for panel button text rendering)

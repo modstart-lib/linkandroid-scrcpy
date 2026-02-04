@@ -500,6 +500,8 @@ scrcpy(struct scrcpy_options *options)
     bool screen_initialized = false;
     bool timeout_initialized = false;
     bool timeout_started = false;
+    bool preview_sender_initialized = false;
+    bool preview_sender_started = false;
 
     struct sc_acksync *acksync = NULL;
 
@@ -1007,8 +1009,6 @@ scrcpy(struct scrcpy_options *options)
     }
 
     // LinkAndroid: Initialize preview sender if enabled
-    bool preview_sender_initialized = false;
-    bool preview_sender_started = false;
     if (options->linkandroid_server && options->linkandroid_preview_interval > 0)
     {
         // Get the global websocket client

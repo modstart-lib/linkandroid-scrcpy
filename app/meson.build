@@ -172,7 +172,7 @@ if host_machine.system() == 'windows'
 endif
 
 if host_machine.system() == 'darwin'
-    dependencies += dependency('appleframeworks', modules: ['Cocoa'])
+    dependencies += dependency('appleframeworks', modules: ['Cocoa', 'Security'])
 endif
 
 check_functions = [

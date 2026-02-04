@@ -23,27 +23,27 @@ app/deps/libwebsockets.sh macos native static
 DEPS_INSTALL_DIR="$PWD/app/deps/work/install/macos-native-static"
 ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-macos"
 
-# Add OpenSSL, libiconv, and SDL2_ttf paths (installed via Homebrew)
+# Add OpenSSL, libiconv, SDL2_ttf, and zlib paths (installed via Homebrew)
 OPENSSL_PREFIX="$(brew --prefix openssl@3 2>/dev/null || echo /opt/homebrew/opt/openssl@3)"
 LIBICONV_PREFIX="$(brew --prefix libiconv 2>/dev/null || echo /opt/homebrew/opt/libiconv)"
 SDL2_TTF_PREFIX="$(brew --prefix sdl2_ttf 2>/dev/null || echo /opt/homebrew/opt/sdl2_ttf)"
+ZLIB_PREFIX="$(brew --prefix zlib 2>/dev/null || echo /opt/homebrew/opt/zlib)"
 
 rm -rf "$MACOS_BUILD_DIR"
 meson setup "$MACOS_BUILD_DIR" \
-    --pkg-config-path="$DEPS_INSTALL_DIR/lib/pkgconfig:$OPENSSL_PREFIX/lib/pkgconfig:$LIBICONV_PREFIX/lib/pkgconfig:$SDL2_TTF_PREFIX/lib/pkgconfig" \
-    -Dc_args="-I$DEPS_INSTALL_DIR/include -I$OPENSSL_PREFIX/include -I$LIBICONV_PREFIX/include -I$SDL2_TTF_PREFIX/include" \
-    -Dc_link_args="-L$DEPS_INSTALL_DIR/lib -L$OPENSSL_PREFIX/lib -L$LIBICONV_PREFIX/lib -L$SDL2_TTF_PREFIX/lib -lssl -lcrypto -liconv" \
+    --pkg-config-path="$DEPS_INSTALL_DIR/lib/pkgconfig:$OPENSSL_PREFIX/lib/pkgconfig:$LIBICONV_PREFIX/lib/pkgconfig:$SDL2_TTF_PREFIX/lib/pkgconfig:$ZLIB_PREFIX/lib/pkgconfig" \
+    -Dc_args="-I$DEPS_INSTALL_DIR/include -I$OPENSSL_PREFIX/include -I$LIBICONV_PREFIX/include -I$SDL2_TTF_PREFIX/include -I$ZLIB_PREFIX/include" \
+    -Dc_link_args="-L$DEPS_INSTALL_DIR/lib -L$OPENSSL_PREFIX/lib -L$LIBICONV_PREFIX/lib -L$SDL2_TTF_PREFIX/lib -L$ZLIB_PREFIX/lib -lssl -lcrypto -liconv -lz -Wl,-framework,Security" \
     --buildtype=release \
     --strip \
     -Db_lto=true \
-    -Dcompile_server=false \
-    -Dportable=true \
-    -Dstatic=true
+    -Dcompile_server=true
 ninja -C "$MACOS_BUILD_DIR"
 
 # Group intermediate outputs into a 'dist' directory
 mkdir -p "$MACOS_BUILD_DIR/dist"
 cp "$MACOS_BUILD_DIR"/app/scrcpy "$MACOS_BUILD_DIR/dist/"
+cp "$MACOS_BUILD_DIR"/server/scrcpy-server "$MACOS_BUILD_DIR/dist/"
 cp app/data/icon.png "$MACOS_BUILD_DIR/dist/"
 cp app/scrcpy.1 "$MACOS_BUILD_DIR/dist/"
 cp -r "$ADB_INSTALL_DIR"/. "$MACOS_BUILD_DIR/dist/"

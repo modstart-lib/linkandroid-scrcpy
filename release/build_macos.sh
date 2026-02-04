@@ -22,11 +22,14 @@ app/deps/libusb.sh macos native static
 DEPS_INSTALL_DIR="$PWD/app/deps/work/install/macos-native-static"
 ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-macos"
 
+# Add OpenSSL paths (installed via Homebrew)
+OPENSSL_PREFIX="$(brew --prefix openssl@3 2>/dev/null || echo /opt/homebrew/opt/openssl@3)"
+
 rm -rf "$MACOS_BUILD_DIR"
 meson setup "$MACOS_BUILD_DIR" \
     --pkg-config-path="$DEPS_INSTALL_DIR/lib/pkgconfig" \
-    -Dc_args="-I$DEPS_INSTALL_DIR/include" \
-    -Dc_link_args="-L$DEPS_INSTALL_DIR/lib" \
+    -Dc_args="-I$DEPS_INSTALL_DIR/include -I$OPENSSL_PREFIX/include" \
+    -Dc_link_args="-L$DEPS_INSTALL_DIR/lib -L$OPENSSL_PREFIX/lib" \
     --buildtype=release \
     --strip \
     -Db_lto=true \

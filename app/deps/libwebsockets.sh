@@ -75,3 +75,11 @@ fi
 
 make -j
 make install
+
+if [[ "$HOST" == win* && "$LINK_TYPE" == static ]]; then
+    LIB_DIR="$INSTALL_DIR/$DIRNAME/lib"
+    if [[ -f "$LIB_DIR/libwebsockets_static.a" && ! -f "$LIB_DIR/libwebsockets.a" ]]; then
+        echo "Renaming libwebsockets_static.a to libwebsockets.a"
+        cp "$LIB_DIR/libwebsockets_static.a" "$LIB_DIR/libwebsockets.a"
+    fi
+fi

@@ -152,6 +152,11 @@ endif
 sdl2_ttf_dep = dependency('SDL2_ttf', required: false, static: static)
 if sdl2_ttf_dep.found()
     dependencies += sdl2_ttf_dep
+    # SDL2_ttf requires FreeType
+    freetype_dep = dependency('freetype2', required: false, static: static)
+    if freetype_dep.found()
+        dependencies += freetype_dep
+    endif
     conf.set('HAVE_SDL2_TTF', true)
 else
     warning('SDL2_ttf not found, panel button rendering will be limited')

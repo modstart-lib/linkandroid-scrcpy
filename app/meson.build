@@ -125,6 +125,7 @@ dependencies = [
     dependency('libavcodec', version: '>= 57.37', static: static),
     dependency('libavutil', static: static),
     dependency('libswresample', static: static),
+    dependency('libswscale', static: static),
     dependency('sdl2', version: '>= 2.0.5', static: static),
     dependency('libwebsockets', static: static),
 ]

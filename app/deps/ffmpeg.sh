@@ -51,7 +51,7 @@ else
         --extra-cflags="-O2 -fPIC"
         --disable-programs
         --disable-doc
-        --disable-swscale
+        --enable-swscale
         --disable-postproc
         --disable-avfilter
         --disable-network

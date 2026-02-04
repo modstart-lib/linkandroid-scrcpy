@@ -167,7 +167,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Inst-get update
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
           sudo apt-get install -y \
             meson ninja-build nasm pkg-config \
             mingw-w64 mingw-w64-tools \
@@ -175,9 +177,7 @@ jobs:
             libz-mingw-w64-dev cmake autoconf automake libtool \
             wget curl git
 
-      - name: Build (Static)w64 mingw-w64-tools libz-mingw-w64-dev cmake
-
-      - name: Build
+      - name: Build (Static)
         run: release/build_windows.sh 64
 
       # upload-artifact does not preserve permissions
@@ -193,7 +193,9 @@ jobs:
         with:
           name: build-win64-intermediate
           path: release/work/build-win64/dist-tar/
-14
+
+  build-macos-aarch64:
+    runs-on: macos-14
     steps:
       - name: Check architecture
         run: |
@@ -212,9 +214,7 @@ jobs:
             brew update
             brew install meson ninja nasm pkg-config automake autoconf libtool
 
-      - name: Build (Static)stall meson nasm libiconv zlib automake autoconf libtool libwebsockets openssl@3
-
-      - name: Build
+      - name: Build (Static)
         env:
           # the default Xcode (and macOS SDK) version can be found at
           # <https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md#xcode>
@@ -236,7 +236,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-macos-aarch64-intermediate
-          path: rele3
+          path: release/work/build-macos-aarch64/dist-tar/
+
+  build-macos-x86_64:
+    runs-on: macos-13
     steps:
       - name: Check architecture
         run: |
@@ -255,10 +258,7 @@ jobs:
             brew update
             brew install meson ninja nasm pkg-config automake autoconf libtool
 
-      - name: Build (Static)nstall meson nasm libiconv zlib automake libwebsockets openssl@3
-             # autoconf and libtool are already installed on macos-13
-
-      - name: Build
+      - name: Build (Static)
         env:
           # the default Xcode (and macOS SDK) version can be found at
           # <https://github.com/actions/runner-images/blob/main/images/macos/macos-13-Readme.md#xcode>

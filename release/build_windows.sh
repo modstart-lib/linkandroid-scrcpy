@@ -51,5 +51,8 @@ cp app/data/scrcpy-console.bat "$WINXX_BUILD_DIR/dist/"
 cp app/data/scrcpy-noconsole.vbs "$WINXX_BUILD_DIR/dist/"
 cp app/data/icon.png "$WINXX_BUILD_DIR/dist/"
 cp app/data/open_a_terminal_here.bat "$WINXX_BUILD_DIR/dist/"
-cp "$DEPS_INSTALL_DIR"/bin/*.dll "$WINXX_BUILD_DIR/dist/"
+# Copy DLL files if they exist (they won't exist for static builds)
+if ls "$DEPS_INSTALL_DIR"/bin/*.dll 1> /dev/null 2>&1; then
+    cp "$DEPS_INSTALL_DIR"/bin/*.dll "$WINXX_BUILD_DIR/dist/"
+fi
 cp -r "$ADB_INSTALL_DIR"/. "$WINXX_BUILD_DIR/dist/"

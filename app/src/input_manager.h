@@ -68,4 +68,25 @@ void
 sc_input_manager_handle_event(struct sc_input_manager *im,
                               const SDL_Event *event);
 
+// LinkAndroid: WebSocket event forwarding
+// Forward declaration
+struct la_websocket_client;
+
+// Global variables for WebSocket event forwarding (defined in input_manager.c)
+extern struct la_websocket_client *g_websocket_client;
+extern uint16_t g_device_width;
+extern uint16_t g_device_height;
+
+// Initialize WebSocket client for event forwarding
+void
+sc_input_manager_init_websocket(struct sc_input_manager *im, const char *server_url);
+
+// Set device dimensions for event forwarding
+void
+sc_input_manager_set_device_size(uint16_t width, uint16_t height);
+
+// Cleanup WebSocket client
+void
+sc_input_manager_cleanup_websocket(void);
+
 #endif

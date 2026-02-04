@@ -113,6 +113,8 @@ const struct scrcpy_options scrcpy_options_default = {
     .angle = NULL,
     .vd_destroy_content = true,
     .vd_system_decorations = true,
+    .linkandroid_server = NULL,
+    .linkandroid_panel_show = false,
 };
 
 enum sc_orientation

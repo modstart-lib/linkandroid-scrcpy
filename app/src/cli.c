@@ -114,6 +114,8 @@ enum {
     OPT_NO_VD_SYSTEM_DECORATIONS,
     OPT_NO_VD_DESTROY_CONTENT,
     OPT_DISPLAY_IME_POLICY,
+    OPT_LINKANDROID_SERVER,
+    OPT_LINKANDROID_PANEL_SHOW,
 };
 
 struct sc_option {
@@ -1062,6 +1064,21 @@ static const struct sc_option options[] = {
         .argdesc = "value",
         .text = "Set the initial window height.\n"
                 "Default is 0 (automatic).",
+    },
+    {
+        .longopt_id = OPT_LINKANDROID_SERVER,
+        .longopt = "linkandroid-server",
+        .argdesc = "ws://url",
+        .text = "Forward input events to a LinkAndroid WebSocket server.\n"
+                "Events will be sent as JSON with normalized coordinates.\n"
+                "Example: ws://127.0.0.1:6000/scrcpy",
+    },
+    {
+        .longopt_id = OPT_LINKANDROID_PANEL_SHOW,
+        .longopt = "linkandroid-panel-show",
+        .text = "Reserve space for panel on the right side at startup.\n"
+                "This prevents the video from being squeezed when panel\n"
+                "buttons are added later via WebSocket.",
     },
 };
 
@@ -2820,6 +2837,12 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
                                               &opts->display_ime_policy)) {
                     return false;
                 }
+                break;
+            case OPT_LINKANDROID_SERVER:
+                opts->linkandroid_server = optarg;
+                break;
+            case OPT_LINKANDROID_PANEL_SHOW:
+                opts->linkandroid_panel_show = true;
                 break;
             default:
                 // getopt prints the error message on stderr

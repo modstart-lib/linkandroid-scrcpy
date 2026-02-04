@@ -6,6 +6,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <SDL2/SDL.h>
+
+#ifdef HAVE_SDL2_TTF
+#include <SDL2/SDL_ttf.h>
+#endif
+
 #include <libavcodec/avcodec.h>
 #include <libavutil/frame.h>
 #include <libavutil/pixfmt.h>
@@ -21,6 +26,21 @@
 #include "trait/key_processor.h"
 #include "trait/frame_sink.h"
 #include "trait/mouse_processor.h"
+
+// Panel button configuration
+#define SC_MAX_PANEL_BUTTONS 32
+#define SC_MAX_BUTTON_TEXT_LEN 64
+
+struct sc_panel_button {
+    char id[32];
+    char text[SC_MAX_BUTTON_TEXT_LEN];
+};
+
+struct sc_panel_config {
+    struct sc_panel_button buttons[SC_MAX_PANEL_BUTTONS];
+    int button_count;
+    bool visible;
+};
 
 struct sc_screen {
     struct sc_frame_sink frame_sink; // frame sink trait
@@ -69,6 +89,19 @@ struct sc_screen {
 
     bool paused;
     AVFrame *resume_frame;
+
+    // Panel configuration for right-side buttons
+    struct sc_panel_config panel;
+    
+#ifdef HAVE_SDL2_TTF
+    TTF_Font *panel_font;  // Font for rendering button text (supports Unicode/Emoji)
+#else
+    void *panel_font;  // Placeholder when SDL2_ttf is not available
+#endif
+    
+    SDL_Cursor *hand_cursor;  // Hand cursor for button hover
+    SDL_Cursor *arrow_cursor; // Default arrow cursor
+    bool cursor_is_hand;      // Track current cursor state
 };
 
 struct sc_screen_params {
@@ -100,6 +133,8 @@ struct sc_screen_params {
 
     bool fullscreen;
     bool start_fps_counter;
+    
+    bool panel_show; // Reserve space for panel at startup
 };
 
 // initialize screen, create window, renderer and texture (window is hidden)
@@ -146,6 +181,14 @@ sc_screen_set_orientation(struct sc_screen *screen,
 // set the display pause state
 void
 sc_screen_set_paused(struct sc_screen *screen, bool paused);
+
+// update panel configuration from JSON
+void
+sc_screen_update_panel(struct sc_screen *screen, const char *json);
+
+// send panel button click event via WebSocket
+void
+sc_screen_send_panel_click(struct sc_screen *screen, const char *button_id);
 
 // react to SDL events
 // If this function returns false, scrcpy must exit with an error.

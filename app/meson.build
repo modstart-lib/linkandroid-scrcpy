@@ -63,6 +63,8 @@ src = [
     'src/util/thread.c',
     'src/util/tick.c',
     'src/util/timeout.c',
+    '../linkandroid/src/websocket_client.c',
+    '../linkandroid/src/json/cJSON.c',
 ]
 
 conf = configuration_data()
@@ -118,7 +120,17 @@ dependencies = [
     dependency('libavutil', static: static),
     dependency('libswresample', static: static),
     dependency('sdl2', version: '>= 2.0.5', static: static),
+    dependency('libwebsockets', static: static),
 ]
+
+# Try to find SDL2_ttf (optional for panel button text rendering)
+sdl2_ttf_dep = dependency('SDL2_ttf', required: false, static: static)
+if sdl2_ttf_dep.found()
+    dependencies += sdl2_ttf_dep
+    conf.set('HAVE_SDL2_TTF', true)
+else
+    warning('SDL2_ttf not found, panel button rendering will be limited')
+endif
 
 if v4l2_support
     dependencies += dependency('libavdevice', static: static)

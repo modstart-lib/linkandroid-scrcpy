@@ -1,0 +1,16 @@
+{
+  "name": "linkandroid-test-websocket-server",
+  "version": "1.0.0",
+  "description": "Test WebSocket server for linkandroid-scrcpy event forwarding",
+  "main": "test_websocket_server.js",
+  "scripts": {
+    "start": "node test_websocket_server.js",
+    "test": "node test_websocket_server.js"
+  },
+  "keywords": ["websocket", "scrcpy", "linkandroid", "test"],
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}

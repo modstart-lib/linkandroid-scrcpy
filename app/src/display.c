@@ -346,6 +346,8 @@ sc_display_render(struct sc_display *display, const SDL_Rect *geometry,
         }
     }
 
-    SDL_RenderPresent(display->renderer);
+    // NOTE: Do NOT call SDL_RenderPresent here!
+    // The screen module will call it after rendering overlays (e.g., panel).
+    // SDL_RenderPresent(display->renderer);
     return SC_DISPLAY_RESULT_OK;
 }

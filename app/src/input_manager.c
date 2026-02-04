@@ -12,6 +12,87 @@
 #include "shortcut_mod.h"
 #include "util/log.h"
 
+// LinkAndroid: WebSocket event forwarding
+#include "../../linkandroid/src/websocket_client.h"
+#include "../../linkandroid/src/json/cJSON.h"
+
+// Global variables for WebSocket event forwarding
+struct la_websocket_client *g_websocket_client = NULL;
+uint16_t g_device_width = 0;
+uint16_t g_device_height = 0;
+
+static struct sc_input_manager *g_input_manager = NULL;
+
+static void
+on_websocket_message(const char *json, void *userdata) {
+    (void) userdata;
+    if (!g_input_manager || !g_input_manager->screen) {
+        LOGW("WebSocket message received but input manager or screen not ready");
+        return;
+    }
+
+    // First, try to parse as panel configuration
+    cJSON *root = cJSON_Parse(json);
+    if (root) {
+        cJSON *type_item = cJSON_GetObjectItemCaseSensitive(root, "type");
+        if (cJSON_IsString(type_item) && strcmp(type_item->valuestring, "panel") == 0) {
+            // Handle panel configuration
+            sc_screen_update_panel(g_input_manager->screen, json);
+            cJSON_Delete(root);
+            return;
+        }
+        cJSON_Delete(root);
+    }
+
+    // Otherwise, handle as control message
+    if (!g_input_manager->controller) {
+        LOGW("WebSocket control message received but controller not ready");
+        return;
+    }
+
+    struct sc_control_msg msg;
+    // msg must be initialized, specifically pointer fields, to avoid double free on error
+    memset(&msg, 0, sizeof(msg));
+
+    if (la_websocket_deserialize_event(json, &msg)) {
+        if (!sc_controller_push_msg(g_input_manager->controller, &msg)) {
+            LOGW("Failed to push WebSocket control message");
+            sc_control_msg_destroy(&msg);
+        }
+        // If pushed successfully, the controller takes ownership of the msg data
+    } else {
+        LOGW("Failed to deserialize WebSocket message: %s", json);
+    }
+}
+
+void
+sc_input_manager_init_websocket(struct sc_input_manager *im, const char *server_url) {
+    g_input_manager = im;
+    if (server_url) {
+        LOGI("Initializing LinkAndroid WebSocket client: %s", server_url);
+        g_websocket_client = la_websocket_client_init(server_url, on_websocket_message, NULL);
+        if (!g_websocket_client) {
+            LOGW("Failed to initialize WebSocket client");
+        }
+    }
+}
+
+void
+sc_input_manager_set_device_size(uint16_t width, uint16_t height) {
+    g_device_width = width;
+    g_device_height = height;
+    LOGI("LinkAndroid: Device size set to %ux%u", width, height);
+}
+
+void
+sc_input_manager_cleanup_websocket(void) {
+    if (g_websocket_client) {
+        LOGI("Cleaning up LinkAndroid WebSocket client");
+        la_websocket_client_destroy(g_websocket_client);
+        g_websocket_client = NULL;
+    }
+}
+
 void
 sc_input_manager_init(struct sc_input_manager *im,
                       const struct sc_input_manager_params *params) {

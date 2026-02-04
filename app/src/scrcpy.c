@@ -45,6 +45,9 @@
 # include "v4l2_sink.h"
 #endif
 
+// LinkAndroid: WebSocket event forwarding
+#include "input_manager.h"
+
 struct scrcpy {
     struct sc_server server;
     struct sc_screen screen;
@@ -824,12 +827,18 @@ aoa_complete:
             .mipmaps = options->mipmaps,
             .fullscreen = options->fullscreen,
             .start_fps_counter = options->start_fps_counter,
+            .panel_show = options->linkandroid_panel_show,
         };
 
         if (!sc_screen_init(&s->screen, &screen_params)) {
             goto end;
         }
         screen_initialized = true;
+
+        // LinkAndroid: Initialize WebSocket client for event forwarding
+        if (options->linkandroid_server) {
+            sc_input_manager_init_websocket(&s->screen.im, options->linkandroid_server);
+        }
 
         if (options->video_playback) {
             struct sc_frame_source *src = &s->video_decoder.frame_source;
@@ -1063,6 +1072,9 @@ end:
     }
 
     sc_server_destroy(&s->server);
+
+    // LinkAndroid: Cleanup WebSocket client
+    sc_input_manager_cleanup_websocket();
 
     return ret;
 }

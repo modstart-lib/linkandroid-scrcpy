@@ -350,6 +350,7 @@ struct scrcpy_options
     const char *linkandroid_server;        // LinkAndroid WebSocket server URL
     bool linkandroid_panel_show;           // Reserve panel space at startup
     uint32_t linkandroid_preview_interval; // Preview interval in milliseconds (0 = disabled)
+    uint8_t linkandroid_preview_ratio;     // Preview resolution ratio (1-100, 100 = original)
     bool linkandroid_skip_taskbar;         // Hide from taskbar/dock
 };
 

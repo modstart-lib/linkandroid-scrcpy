@@ -1019,12 +1019,14 @@ scrcpy(struct scrcpy_options *options)
             bool ok = la_preview_sender_init(&s->preview_sender,
                                              g_websocket_client,
                                              &s->screen,
-                                             options->linkandroid_preview_interval);
+                                             options->linkandroid_preview_interval,
+                                             options->linkandroid_preview_ratio);
             if (ok)
             {
                 preview_sender_initialized = true;
-                LOGI("LinkAndroid preview sender initialized (interval: %u ms)",
-                     options->linkandroid_preview_interval);
+                LOGI("LinkAndroid preview sender initialized (interval: %u ms, ratio: %u%%)",
+                     options->linkandroid_preview_interval,
+                     options->linkandroid_preview_ratio);
             }
             else
             {

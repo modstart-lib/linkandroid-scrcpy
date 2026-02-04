@@ -118,6 +118,7 @@ enum
     OPT_LINKANDROID_SERVER,
     OPT_LINKANDROID_PANEL_SHOW,
     OPT_LINKANDROID_PREVIEW_INTERVAL,
+    OPT_LINKANDROID_PREVIEW_RATIO,
     OPT_LINKANDROID_SKIP_TASKBAR,
 };
 
@@ -1082,6 +1083,16 @@ static const struct sc_option options[] = {
                 "server at the specified interval (in milliseconds).\n"
                 "Requires --linkandroid-server. Set to 0 to disable.\n"
                 "Example: --linkandroid-preview-interval 1000",
+    },
+    {
+        .longopt_id = OPT_LINKANDROID_PREVIEW_RATIO,
+        .longopt = "linkandroid-preview-ratio",
+        .argdesc = "value",
+        .text = "Set preview resolution ratio (1-100).\n"
+                "100 means 1:1 (original resolution), 50 means 50%,\n"
+                "10 means 10% of the original resolution.\n"
+                "Default: 100 (original resolution).\n"
+                "Example: --linkandroid-preview-ratio 50",
     },
     {
         .longopt_id = OPT_LINKANDROID_SKIP_TASKBAR,
@@ -3118,6 +3129,18 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
                 return false;
             }
             opts->linkandroid_preview_interval = (uint32_t)ms;
+            break;
+        }
+        case OPT_LINKANDROID_PREVIEW_RATIO:
+        {
+            char *endptr;
+            long ratio = strtol(optarg, &endptr, 10);
+            if (*endptr != '\0' || ratio < 1 || ratio > 100)
+            {
+                LOGE("Invalid preview ratio: %s (must be between 1 and 100)", optarg);
+                return false;
+            }
+            opts->linkandroid_preview_ratio = (uint8_t)ratio;
             break;
         }
         case OPT_LINKANDROID_SKIP_TASKBAR:

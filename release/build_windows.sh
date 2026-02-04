@@ -25,6 +25,7 @@ app/deps/sdl.sh $WINXX cross shared
 app/deps/dav1d.sh $WINXX cross shared
 app/deps/ffmpeg.sh $WINXX cross shared
 app/deps/libusb.sh $WINXX cross shared
+app/deps/libwebsockets.sh $WINXX cross shared
 
 DEPS_INSTALL_DIR="$PWD/app/deps/work/install/$WINXX-cross-shared"
 ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-windows"

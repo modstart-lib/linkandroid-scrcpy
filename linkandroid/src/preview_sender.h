@@ -13,6 +13,7 @@ struct la_preview_sender
     struct la_websocket_client *ws_client;
     struct sc_screen *screen;
     uint32_t interval_ms; // Preview interval in milliseconds
+    uint8_t ratio;        // Preview resolution ratio (1-100, 100 = original)
     bool running;
     pthread_t thread;
     bool thread_started;
@@ -25,12 +26,14 @@ struct la_preview_sender
  * @param ws_client WebSocket client for sending previews
  * @param screen Screen object to capture from
  * @param interval_ms Preview interval in milliseconds
+ * @param ratio Preview resolution ratio (1-100, 100 = original)
  * @return true on success, false on failure
  */
 bool la_preview_sender_init(struct la_preview_sender *sender,
                             struct la_websocket_client *ws_client,
                             struct sc_screen *screen,
-                            uint32_t interval_ms);
+                            uint32_t interval_ms,
+                            uint8_t ratio);
 
 /**
  * Start preview sender thread

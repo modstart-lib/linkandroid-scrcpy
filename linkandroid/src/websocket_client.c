@@ -13,7 +13,7 @@
 #include "../../app/src/control_msg.h"
 #include "../../app/src/util/log.h"
 
-#define MAX_PAYLOAD_SIZE (256 * 1024) // 256KB for preview images
+#define MAX_PAYLOAD_SIZE (2 * 1024 * 1024) // 2MB for preview images
 #define RECONNECT_DELAY_MS 3000
 
 struct message_node

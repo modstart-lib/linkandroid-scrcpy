@@ -8,6 +8,7 @@
 #include <SDL2/SDL.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
 
 #include "websocket_client.h"
 #include "../../app/src/screen.h"
@@ -51,16 +52,182 @@ static char *base64_encode(const unsigned char *data, size_t input_length)
     return encoded_data;
 }
 
-// Capture frame from SDL renderer and encode to PNG
+// Encode AVFrame directly to PNG (without going through SDL)
+static bool encode_avframe_to_png(const AVFrame *src_frame,
+                                  uint8_t ratio,
+                                  unsigned char **out_data,
+                                  size_t *out_size)
+{
+    if (!src_frame || !out_data || !out_size)
+    {
+        return false;
+    }
+
+    int orig_width = src_frame->width;
+    int orig_height = src_frame->height;
+    
+    // Calculate scaled dimensions based on ratio (1-100)
+    int scaled_width = (orig_width * ratio) / 100;
+    int scaled_height = (orig_height * ratio) / 100;
+    
+    // Ensure minimum dimensions
+    if (scaled_width < 1) scaled_width = 1;
+    if (scaled_height < 1) scaled_height = 1;
+    
+    static bool first_log = true;
+    if (first_log)
+    {
+        LOGI("Preview encode: original=%dx%d, ratio=%d%%, scaled=%dx%d",
+             orig_width, orig_height, ratio, scaled_width, scaled_height);
+        first_log = false;
+    }
+
+    // Find PNG encoder
+    const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_PNG);
+    if (!codec)
+    {
+        LOGE("PNG codec not found");
+        return false;
+    }
+
+    AVCodecContext *codec_ctx = avcodec_alloc_context3(codec);
+    if (!codec_ctx)
+    {
+        LOGE("Failed to allocate codec context");
+        return false;
+    }
+
+    codec_ctx->width = scaled_width;
+    codec_ctx->height = scaled_height;
+    codec_ctx->pix_fmt = AV_PIX_FMT_RGB24; // PNG works well with RGB24
+    codec_ctx->time_base = (AVRational){1, 1};
+    codec_ctx->compression_level = 3; // Balanced compression
+
+    if (avcodec_open2(codec_ctx, codec, NULL) < 0)
+    {
+        LOGE("Failed to open PNG codec");
+        avcodec_free_context(&codec_ctx);
+        return false;
+    }
+
+    // Allocate frame for encoding
+    AVFrame *rgb_frame = av_frame_alloc();
+    if (!rgb_frame)
+    {
+        LOGE("Failed to allocate RGB frame");
+        avcodec_free_context(&codec_ctx);
+        return false;
+    }
+
+    rgb_frame->format = codec_ctx->pix_fmt;
+    rgb_frame->width = scaled_width;
+    rgb_frame->height = scaled_height;
+
+    if (av_frame_get_buffer(rgb_frame, 32) < 0)
+    {
+        LOGE("Failed to allocate RGB frame buffer");
+        av_frame_free(&rgb_frame);
+        avcodec_free_context(&codec_ctx);
+        return false;
+    }
+
+    // Use swscale to convert and scale
+    struct SwsContext *sws_ctx = sws_getContext(
+        orig_width, orig_height, src_frame->format,
+        scaled_width, scaled_height, AV_PIX_FMT_RGB24,
+        SWS_BILINEAR, NULL, NULL, NULL);
+
+    if (!sws_ctx)
+    {
+        LOGE("Failed to create swscale context");
+        av_frame_free(&rgb_frame);
+        avcodec_free_context(&codec_ctx);
+        return false;
+    }
+
+    sws_scale(sws_ctx,
+              (const uint8_t *const *)src_frame->data,
+              src_frame->linesize,
+              0, orig_height,
+              rgb_frame->data,
+              rgb_frame->linesize);
+
+    sws_freeContext(sws_ctx);
+
+    // Encode frame to PNG
+    AVPacket *pkt = av_packet_alloc();
+    if (!pkt)
+    {
+        LOGE("Failed to allocate packet");
+        av_frame_free(&rgb_frame);
+        avcodec_free_context(&codec_ctx);
+        return false;
+    }
+
+    int ret = avcodec_send_frame(codec_ctx, rgb_frame);
+    av_frame_free(&rgb_frame);
+
+    if (ret < 0)
+    {
+        LOGE("Error sending frame for encoding");
+        av_packet_free(&pkt);
+        avcodec_free_context(&codec_ctx);
+        return false;
+    }
+
+    ret = avcodec_receive_packet(codec_ctx, pkt);
+    if (ret < 0)
+    {
+        LOGE("Error receiving packet from encoder");
+        av_packet_free(&pkt);
+        avcodec_free_context(&codec_ctx);
+        return false;
+    }
+
+    // Copy encoded data
+    *out_size = pkt->size;
+    *out_data = malloc(pkt->size);
+    if (!*out_data)
+    {
+        LOGE("Failed to allocate output buffer");
+        av_packet_free(&pkt);
+        avcodec_free_context(&codec_ctx);
+        return false;
+    }
+    memcpy(*out_data, pkt->data, pkt->size);
+
+    av_packet_free(&pkt);
+    avcodec_free_context(&codec_ctx);
+
+    return true;
+}
+
+// Capture frame from SDL renderer and encode to PNG (DEPRECATED - kept for fallback)
 static bool capture_and_encode_png(SDL_Renderer *renderer,
                                    const SDL_Rect *rect,
+                                   uint8_t ratio,
                                    unsigned char **out_data,
                                    size_t *out_size)
 {
     int width = rect->w;
     int height = rect->h;
+    
+    // Calculate scaled dimensions based on ratio (1-100)
+    int scaled_width = (width * ratio) / 100;
+    int scaled_height = (height * ratio) / 100;
+    
+    // Ensure minimum dimensions
+    if (scaled_width < 1) scaled_width = 1;
+    if (scaled_height < 1) scaled_height = 1;
+    
+    static bool first_log = true;
+    if (first_log) {
+        LOGI("Preview capture: original=%dx%d, ratio=%d%%, scaled=%dx%d",
+             width, height, ratio, scaled_width, scaled_height);
+        first_log = false;
+    }
 
-    // Create a surface to read pixels into
+    // Create a surface to read pixels into (original size)
     SDL_Surface *surface = SDL_CreateRGBSurface(0, width, height, 32,
                                                 0x00FF0000,
                                                 0x0000FF00,
@@ -80,13 +247,43 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
         SDL_FreeSurface(surface);
         return false;
     }
+    
+    // Create scaled surface if ratio != 100
+    SDL_Surface *final_surface = surface;
+    if (ratio != 100)
+    {
+        final_surface = SDL_CreateRGBSurface(0, scaled_width, scaled_height, 32,
+                                            0x00FF0000,
+                                            0x0000FF00,
+                                            0x000000FF,
+                                            0xFF000000);
+        if (!final_surface)
+        {
+            LOGE("Failed to create scaled surface: %s", SDL_GetError());
+            SDL_FreeSurface(surface);
+            return false;
+        }
+        
+        // Scale the surface using SDL_BlitScaled
+        SDL_Rect dst_rect = {0, 0, scaled_width, scaled_height};
+        if (SDL_BlitScaled(surface, NULL, final_surface, &dst_rect) != 0)
+        {
+            LOGE("Failed to scale surface: %s", SDL_GetError());
+            SDL_FreeSurface(final_surface);
+            SDL_FreeSurface(surface);
+            return false;
+        }
+        
+        // Free original surface, we only need the scaled one
+        SDL_FreeSurface(surface);
+    }
 
-    // Encode to PNG using libavcodec
+    // Encode to PNG using libavcodec with scaled dimensions
     const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_PNG);
     if (!codec)
     {
         LOGE("PNG codec not found");
-        SDL_FreeSurface(surface);
+        SDL_FreeSurface(final_surface);
         return false;
     }
 
@@ -94,20 +291,21 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
     if (!codec_ctx)
     {
         LOGE("Failed to allocate codec context");
-        SDL_FreeSurface(surface);
+        SDL_FreeSurface(final_surface);
         return false;
     }
 
-    codec_ctx->width = width;
-    codec_ctx->height = height;
+    codec_ctx->width = scaled_width;
+    codec_ctx->height = scaled_height;
     codec_ctx->pix_fmt = AV_PIX_FMT_RGBA;
     codec_ctx->time_base = (AVRational){1, 1};
+    codec_ctx->compression_level = 3; // 0-9: 0=no compression, 9=max compression, 3=balanced
 
     if (avcodec_open2(codec_ctx, codec, NULL) < 0)
     {
         LOGE("Failed to open codec");
         avcodec_free_context(&codec_ctx);
-        SDL_FreeSurface(surface);
+        SDL_FreeSurface(final_surface);
         return false;
     }
 
@@ -116,7 +314,7 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
     {
         LOGE("Failed to allocate frame");
         avcodec_free_context(&codec_ctx);
-        SDL_FreeSurface(surface);
+        SDL_FreeSurface(final_surface);
         return false;
     }
 
@@ -129,19 +327,19 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
         LOGE("Failed to allocate frame buffer");
         av_frame_free(&frame);
         avcodec_free_context(&codec_ctx);
-        SDL_FreeSurface(surface);
+        SDL_FreeSurface(final_surface);
         return false;
     }
 
-    // Copy SDL surface data to AVFrame
-    for (int y = 0; y < height; y++)
+    // Copy SDL surface data to AVFrame (using scaled dimensions)
+    for (int y = 0; y < scaled_height; y++)
     {
         memcpy(frame->data[0] + y * frame->linesize[0],
-               (uint8_t *)surface->pixels + y * surface->pitch,
-               width * 4);
+               (uint8_t *)final_surface->pixels + y * final_surface->pitch,
+               scaled_width * 4);
     }
 
-    SDL_FreeSurface(surface);
+    SDL_FreeSurface(final_surface);
 
     // Encode frame
     AVPacket *pkt = av_packet_alloc();
@@ -217,28 +415,26 @@ static void *preview_sender_thread(void *arg)
             continue;
         }
 
-        // Check if screen has a renderer and valid content rect
-        if (!sender->screen || !sender->screen->display.renderer || !sender->screen->has_frame)
+        // Check if screen has a frame available
+        if (!sender->screen || !sender->screen->has_frame || !sender->screen->frame)
         {
             continue;
         }
 
-        SDL_Renderer *renderer = sender->screen->display.renderer;
-        const SDL_Rect *rect = &sender->screen->rect;
-
-        // Ensure rect has valid dimensions
-        if (rect->w <= 0 || rect->h <= 0)
+        // Get the current frame (original resolution)
+        AVFrame *frame = sender->screen->frame;
+        if (frame->width <= 0 || frame->height <= 0)
         {
             continue;
         }
 
-        // Capture and encode frame (only the content rect, excluding panel buttons)
+        // Encode frame directly from AVFrame (original resolution)
         unsigned char *png_data = NULL;
         size_t png_size = 0;
 
-        if (!capture_and_encode_png(renderer, rect, &png_data, &png_size))
+        if (!encode_avframe_to_png(frame, sender->ratio, &png_data, &png_size))
         {
-            LOGW("Failed to capture and encode frame");
+            LOGW("Failed to encode frame to PNG");
             continue;
         }
 
@@ -288,9 +484,10 @@ static void *preview_sender_thread(void *arg)
 bool la_preview_sender_init(struct la_preview_sender *sender,
                             struct la_websocket_client *ws_client,
                             struct sc_screen *screen,
-                            uint32_t interval_ms)
+                            uint32_t interval_ms,
+                            uint8_t ratio)
 {
-    if (!sender || !ws_client || !screen || interval_ms == 0)
+    if (!sender || !ws_client || !screen || interval_ms == 0 || ratio < 1 || ratio > 100)
     {
         return false;
     }
@@ -298,6 +495,7 @@ bool la_preview_sender_init(struct la_preview_sender *sender,
     sender->ws_client = ws_client;
     sender->screen = screen;
     sender->interval_ms = interval_ms;
+    sender->ratio = ratio;
     sender->running = false;
     sender->thread_started = false;
 

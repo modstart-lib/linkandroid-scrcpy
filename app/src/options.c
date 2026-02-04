@@ -116,6 +116,7 @@ const struct scrcpy_options scrcpy_options_default = {
     .linkandroid_server = NULL,
     .linkandroid_panel_show = false,
     .linkandroid_preview_interval = 0, // disabled by default
+    .linkandroid_preview_ratio = 100,  // 100% (original resolution) by default
     .linkandroid_skip_taskbar = false,
 };
 

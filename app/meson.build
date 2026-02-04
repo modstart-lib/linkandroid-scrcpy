@@ -64,6 +64,7 @@ src = [
     'src/util/tick.c',
     'src/util/timeout.c',
     '../linkandroid/src/websocket_client.c',
+    '../linkandroid/src/preview_sender.c',
     '../linkandroid/src/json/cJSON.c',
 ]
 
@@ -88,6 +89,7 @@ else
         'src/sys/unix/process.c',
     ]
     if host_machine.system() == 'darwin'
+        src += [ 'src/util/cocoa.m' ]
         conf.set('_DARWIN_C_SOURCE', true)
     endif
 endif
@@ -112,6 +114,10 @@ endif
 
 cc = meson.get_compiler('c')
 
+if host_machine.system() == 'darwin'
+    add_languages('objc')
+endif
+
 static = get_option('static')
 
 dependencies = [
@@ -122,6 +128,19 @@ dependencies = [
     dependency('sdl2', version: '>= 2.0.5', static: static),
     dependency('libwebsockets', static: static),
 ]
+
+# When statically linking libwebsockets, we need its dependencies
+if static
+    libuv_dep = dependency('libuv', required: false, static: static)
+    if libuv_dep.found()
+        dependencies += libuv_dep
+    endif
+    
+    libev_dep = dependency('libev', required: false, static: static)
+    if libev_dep.found()
+        dependencies += libev_dep
+    endif
+endif
 
 # Try to find SDL2_ttf (optional for panel button text rendering)
 sdl2_ttf_dep = dependency('SDL2_ttf', required: false, static: static)
@@ -143,6 +162,10 @@ endif
 if host_machine.system() == 'windows'
     dependencies += cc.find_library('mingw32')
     dependencies += cc.find_library('ws2_32')
+endif
+
+if host_machine.system() == 'darwin'
+    dependencies += dependency('appleframeworks', modules: ['Cocoa'])
 endif
 
 check_functions = [

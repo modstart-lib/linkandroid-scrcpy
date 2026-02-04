@@ -19,6 +19,8 @@ const { WebSocketServer } = require('ws');
 const PORT = 63006;
 const PATH = '/scrcpy';
 
+// Check if panel should be shown
+
 const wss = new WebSocketServer({
   port: PORT,
   path: PATH
@@ -37,7 +39,7 @@ wss.on('connection', (ws, req) => {
   console.log(`Waiting for messages...`);
 
   // Send panel configuration with test buttons (including Emoji and Chinese)
-  // setTimeout(() => {
+  // Only send if --linkandroid-panel-show flag is present
   console.log('\n[INFO] Sending panel configuration with buttons...');
   const panelConfig = {
     type: 'panel',
@@ -54,7 +56,6 @@ wss.on('connection', (ws, req) => {
   };
   ws.send(JSON.stringify(panelConfig));
   console.log('[INFO] Panel configuration sent with', panelConfig.data.buttons.length, 'buttons');
-  // }, 1000);
 
   // Optional: Send periodic key events for testing (disabled by default)
   // Uncomment the code below to enable automated key event testing

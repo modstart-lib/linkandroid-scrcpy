@@ -13,7 +13,7 @@
 #include "../../app/src/control_msg.h"
 #include "../../app/src/util/log.h"
 
-#define MAX_PAYLOAD_SIZE 4096
+#define MAX_PAYLOAD_SIZE (256 * 1024) // 256KB for preview images
 #define RECONNECT_DELAY_MS 3000
 
 struct message_node
@@ -772,6 +772,42 @@ bool la_websocket_client_is_connected(struct la_websocket_client *client)
     pthread_mutex_unlock(&client->lock);
 
     return connected;
+}
+
+bool la_websocket_client_send_preview(struct la_websocket_client *client,
+                                      const char *image_data,
+                                      const char *format)
+{
+    if (!client || !image_data || !format)
+    {
+        return false;
+    }
+
+    // Create JSON message with preview data
+    cJSON *root = cJSON_CreateObject();
+    if (!root)
+    {
+        LOGE("Failed to create JSON object for preview");
+        return false;
+    }
+
+    cJSON_AddStringToObject(root, "type", "preview");
+    cJSON_AddStringToObject(root, "format", format);
+    cJSON_AddStringToObject(root, "data", image_data);
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    if (!json)
+    {
+        LOGE("Failed to serialize preview JSON");
+        return false;
+    }
+
+    bool sent = la_websocket_client_send(client, json);
+    free(json);
+
+    return sent;
 }
 
 void la_websocket_client_destroy(struct la_websocket_client *client)

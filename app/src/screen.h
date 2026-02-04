@@ -31,18 +31,21 @@
 #define SC_MAX_PANEL_BUTTONS 32
 #define SC_MAX_BUTTON_TEXT_LEN 64
 
-struct sc_panel_button {
+struct sc_panel_button
+{
     char id[32];
     char text[SC_MAX_BUTTON_TEXT_LEN];
 };
 
-struct sc_panel_config {
+struct sc_panel_config
+{
     struct sc_panel_button buttons[SC_MAX_PANEL_BUTTONS];
     int button_count;
     bool visible;
 };
 
-struct sc_screen {
+struct sc_screen
+{
     struct sc_frame_sink frame_sink; // frame sink trait
 
 #ifndef NDEBUG
@@ -58,13 +61,15 @@ struct sc_screen {
     struct sc_fps_counter fps_counter;
 
     // The initial requested window properties
-    struct {
+    struct
+    {
         int16_t x;
         int16_t y;
         uint16_t width;
         uint16_t height;
         bool fullscreen;
         bool start_fps_counter;
+        bool hide_window; // LinkAndroid: Keep window hidden (for preview-only mode)
     } req;
 
     SDL_Window *window;
@@ -92,19 +97,20 @@ struct sc_screen {
 
     // Panel configuration for right-side buttons
     struct sc_panel_config panel;
-    
+
 #ifdef HAVE_SDL2_TTF
-    TTF_Font *panel_font;  // Font for rendering button text (supports Unicode/Emoji)
+    TTF_Font *panel_font; // Font for rendering button text (supports Unicode/Emoji)
 #else
-    void *panel_font;  // Placeholder when SDL2_ttf is not available
+    void *panel_font; // Placeholder when SDL2_ttf is not available
 #endif
-    
+
     SDL_Cursor *hand_cursor;  // Hand cursor for button hover
     SDL_Cursor *arrow_cursor; // Default arrow cursor
     bool cursor_is_hand;      // Track current cursor state
 };
 
-struct sc_screen_params {
+struct sc_screen_params
+{
     bool video;
 
     struct sc_controller *controller;
@@ -133,85 +139,72 @@ struct sc_screen_params {
 
     bool fullscreen;
     bool start_fps_counter;
-    
-    bool panel_show; // Reserve space for panel at startup
+
+    bool panel_show;  // Reserve space for panel at startup
+    bool hide_window; // LinkAndroid: Keep window hidden (for preview-only mode)
 };
 
 // initialize screen, create window, renderer and texture (window is hidden)
-bool
-sc_screen_init(struct sc_screen *screen, const struct sc_screen_params *params);
+bool sc_screen_init(struct sc_screen *screen, const struct sc_screen_params *params);
 
 // request to interrupt any inner thread
 // must be called before screen_join()
-void
-sc_screen_interrupt(struct sc_screen *screen);
+void sc_screen_interrupt(struct sc_screen *screen);
 
 // join any inner thread
-void
-sc_screen_join(struct sc_screen *screen);
+void sc_screen_join(struct sc_screen *screen);
 
 // destroy window, renderer and texture (if any)
-void
-sc_screen_destroy(struct sc_screen *screen);
+void sc_screen_destroy(struct sc_screen *screen);
 
 // hide the window
 //
 // It is used to hide the window immediately on closing without waiting for
 // screen_destroy()
-void
-sc_screen_hide_window(struct sc_screen *screen);
+void sc_screen_hide_window(struct sc_screen *screen);
 
 // toggle the fullscreen mode
-void
-sc_screen_toggle_fullscreen(struct sc_screen *screen);
+void sc_screen_toggle_fullscreen(struct sc_screen *screen);
 
 // resize window to optimal size (remove black borders)
-void
-sc_screen_resize_to_fit(struct sc_screen *screen);
+void sc_screen_resize_to_fit(struct sc_screen *screen);
 
 // resize window to 1:1 (pixel-perfect)
-void
-sc_screen_resize_to_pixel_perfect(struct sc_screen *screen);
+void sc_screen_resize_to_pixel_perfect(struct sc_screen *screen);
 
 // set the display orientation
-void
-sc_screen_set_orientation(struct sc_screen *screen,
-                          enum sc_orientation orientation);
+void sc_screen_set_orientation(struct sc_screen *screen,
+                               enum sc_orientation orientation);
 
 // set the display pause state
-void
-sc_screen_set_paused(struct sc_screen *screen, bool paused);
+void sc_screen_set_paused(struct sc_screen *screen, bool paused);
 
 // update panel configuration from JSON
-void
-sc_screen_update_panel(struct sc_screen *screen, const char *json);
+void sc_screen_update_panel(struct sc_screen *screen, const char *json);
 
 // send panel button click event via WebSocket
-void
-sc_screen_send_panel_click(struct sc_screen *screen, const char *button_id);
+void sc_screen_send_panel_click(struct sc_screen *screen, const char *button_id);
 
 // react to SDL events
 // If this function returns false, scrcpy must exit with an error.
-bool
-sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event);
+bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event);
 
 // convert point from window coordinates to frame coordinates
 // x and y are expressed in pixels
 struct sc_point
 sc_screen_convert_window_to_frame_coords(struct sc_screen *screen,
-                                        int32_t x, int32_t y);
+                                         int32_t x, int32_t y);
 
 // convert point from drawable coordinates to frame coordinates
 // x and y are expressed in pixels
 struct sc_point
 sc_screen_convert_drawable_to_frame_coords(struct sc_screen *screen,
-                                          int32_t x, int32_t y);
+                                           int32_t x, int32_t y);
 
 // Convert coordinates from window to drawable.
 // Events are expressed in window coordinates, but content is expressed in
 // drawable coordinates. They are the same if HiDPI scaling is 1, but differ
 // otherwise.
-void
-sc_screen_hidpi_scale_coords(struct sc_screen *screen, int32_t *x, int32_t *y);
+void sc_screen_hidpi_scale_coords(struct sc_screen *screen, int32_t *x, int32_t *y);
 
 #endif

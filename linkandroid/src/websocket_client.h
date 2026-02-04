@@ -66,6 +66,19 @@ bool
 la_websocket_client_is_connected(struct la_websocket_client *client);
 
 /**
+ * Send image preview data to WebSocket server
+ * 
+ * @param client WebSocket client instance
+ * @param image_data Base64-encoded image data (PNG or JPEG)
+ * @param format Image format ("png" or "jpeg")
+ * @return true on success, false on failure
+ */
+bool
+la_websocket_client_send_preview(struct la_websocket_client *client,
+                                 const char *image_data,
+                                 const char *format);
+
+/**
  * Destroy WebSocket client and close connection
  * 
  * @param client WebSocket client instance

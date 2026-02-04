@@ -10,8 +10,8 @@
 
 #ifdef _WIN32
 // not needed here, but winsock2.h must never be included AFTER windows.h
-# include <winsock2.h>
-# include <windows.h>
+#include <winsock2.h>
+#include <windows.h>
 #endif
 
 #include "audio_player.h"
@@ -30,25 +30,30 @@
 #include "uhid/keyboard_uhid.h"
 #include "uhid/mouse_uhid.h"
 #ifdef HAVE_USB
-# include "usb/aoa_hid.h"
-# include "usb/gamepad_aoa.h"
-# include "usb/keyboard_aoa.h"
-# include "usb/mouse_aoa.h"
-# include "usb/usb.h"
+#include "usb/aoa_hid.h"
+#include "usb/gamepad_aoa.h"
+#include "usb/keyboard_aoa.h"
+#include "usb/mouse_aoa.h"
+#include "usb/usb.h"
 #endif
 #include "util/acksync.h"
 #include "util/log.h"
 #include "util/rand.h"
 #include "util/timeout.h"
 #include "util/tick.h"
+#ifdef __APPLE__
+#include "util/cocoa.h"
+#endif
 #ifdef HAVE_V4L2
-# include "v4l2_sink.h"
+#include "v4l2_sink.h"
 #endif
 
 // LinkAndroid: WebSocket event forwarding
 #include "input_manager.h"
+#include "../linkandroid/src/preview_sender.h"
 
-struct scrcpy {
+struct scrcpy
+{
     struct sc_server server;
     struct sc_screen screen;
     struct sc_audio_player audio_player;
@@ -71,32 +76,39 @@ struct scrcpy {
     struct sc_acksync acksync;
 #endif
     struct sc_uhid_devices uhid_devices;
-    union {
+    union
+    {
         struct sc_keyboard_sdk keyboard_sdk;
         struct sc_keyboard_uhid keyboard_uhid;
 #ifdef HAVE_USB
         struct sc_keyboard_aoa keyboard_aoa;
 #endif
     };
-    union {
+    union
+    {
         struct sc_mouse_sdk mouse_sdk;
         struct sc_mouse_uhid mouse_uhid;
 #ifdef HAVE_USB
         struct sc_mouse_aoa mouse_aoa;
 #endif
     };
-    union {
+    union
+    {
         struct sc_gamepad_uhid gamepad_uhid;
 #ifdef HAVE_USB
         struct sc_gamepad_aoa gamepad_aoa;
 #endif
     };
     struct sc_timeout timeout;
+    // LinkAndroid: Preview sender
+    struct la_preview_sender preview_sender;
 };
 
 #ifdef _WIN32
-static BOOL WINAPI windows_ctrl_handler(DWORD ctrl_type) {
-    if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT) {
+static BOOL WINAPI windows_ctrl_handler(DWORD ctrl_type)
+{
+    if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT)
+    {
         sc_push_event(SDL_QUIT);
         return TRUE;
     }
@@ -105,29 +117,35 @@ static BOOL WINAPI windows_ctrl_handler(DWORD ctrl_type) {
 #endif // _WIN32
 
 static void
-sdl_set_hints(const char *render_driver) {
-    if (render_driver && !SDL_SetHint(SDL_HINT_RENDER_DRIVER, render_driver)) {
+sdl_set_hints(const char *render_driver)
+{
+    if (render_driver && !SDL_SetHint(SDL_HINT_RENDER_DRIVER, render_driver))
+    {
         LOGW("Could not set render driver");
     }
 
     // App name used in various contexts (such as PulseAudio)
 #if defined(SCRCPY_SDL_HAS_HINT_APP_NAME)
-    if (!SDL_SetHint(SDL_HINT_APP_NAME, "scrcpy")) {
+    if (!SDL_SetHint(SDL_HINT_APP_NAME, "scrcpy"))
+    {
         LOGW("Could not set app name");
     }
 #elif defined(SCRCPY_SDL_HAS_HINT_AUDIO_DEVICE_APP_NAME)
-    if (!SDL_SetHint(SDL_HINT_AUDIO_DEVICE_APP_NAME, "scrcpy")) {
+    if (!SDL_SetHint(SDL_HINT_AUDIO_DEVICE_APP_NAME, "scrcpy"))
+    {
         LOGW("Could not set audio device app name");
     }
 #endif
 
     // Linear filtering
-    if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) {
+    if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"))
+    {
         LOGW("Could not enable linear filtering");
     }
 
     // Handle a click to gain focus as any other click
-    if (!SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1")) {
+    if (!SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1"))
+    {
         LOGW("Could not enable mouse focus clickthrough");
     }
 
@@ -135,98 +153,116 @@ sdl_set_hints(const char *render_driver) {
     // Disable synthetic mouse events from touch events
     // Touch events with id SDL_TOUCH_MOUSEID are ignored anyway, but it is
     // better not to generate them in the first place.
-    if (!SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0")) {
+    if (!SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0"))
+    {
         LOGW("Could not disable synthetic mouse events");
     }
 #endif
 
 #ifdef SCRCPY_SDL_HAS_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR
     // Disable compositor bypassing on X11
-    if (!SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0")) {
+    if (!SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0"))
+    {
         LOGW("Could not disable X11 compositor bypass");
     }
 #endif
 
     // Do not minimize on focus loss
-    if (!SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0")) {
+    if (!SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0"))
+    {
         LOGW("Could not disable minimize on focus loss");
     }
 
-    if (!SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1")) {
+    if (!SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"))
+    {
         LOGW("Could not allow joystick background events");
     }
 }
 
 static void
-sdl_configure(bool video_playback, bool disable_screensaver) {
+sdl_configure(bool video_playback, bool disable_screensaver)
+{
 #ifdef _WIN32
     // Clean up properly on Ctrl+C on Windows
     bool ok = SetConsoleCtrlHandler(windows_ctrl_handler, TRUE);
-    if (!ok) {
+    if (!ok)
+    {
         LOGW("Could not set Ctrl+C handler");
     }
 #endif // _WIN32
 
-    if (!video_playback) {
+    if (!video_playback)
+    {
         return;
     }
 
-    if (disable_screensaver) {
+    if (disable_screensaver)
+    {
         SDL_DisableScreenSaver();
-    } else {
+    }
+    else
+    {
         SDL_EnableScreenSaver();
     }
 }
 
 static enum scrcpy_exit_code
-event_loop(struct scrcpy *s, bool has_screen) {
+event_loop(struct scrcpy *s, bool has_screen)
+{
     SDL_Event event;
-    while (SDL_WaitEvent(&event)) {
-        switch (event.type) {
-            case SC_EVENT_DEVICE_DISCONNECTED:
-                LOGW("Device disconnected");
-                return SCRCPY_EXIT_DISCONNECTED;
-            case SC_EVENT_DEMUXER_ERROR:
-                LOGE("Demuxer error");
+    while (SDL_WaitEvent(&event))
+    {
+        switch (event.type)
+        {
+        case SC_EVENT_DEVICE_DISCONNECTED:
+            LOGW("Device disconnected");
+            return SCRCPY_EXIT_DISCONNECTED;
+        case SC_EVENT_DEMUXER_ERROR:
+            LOGE("Demuxer error");
+            return SCRCPY_EXIT_FAILURE;
+        case SC_EVENT_CONTROLLER_ERROR:
+            LOGE("Controller error");
+            return SCRCPY_EXIT_FAILURE;
+        case SC_EVENT_RECORDER_ERROR:
+            LOGE("Recorder error");
+            return SCRCPY_EXIT_FAILURE;
+        case SC_EVENT_AOA_OPEN_ERROR:
+            LOGE("AOA open error");
+            return SCRCPY_EXIT_FAILURE;
+        case SC_EVENT_TIME_LIMIT_REACHED:
+            LOGI("Time limit reached");
+            return SCRCPY_EXIT_SUCCESS;
+        case SDL_QUIT:
+            LOGD("User requested to quit");
+            return SCRCPY_EXIT_SUCCESS;
+        case SC_EVENT_RUN_ON_MAIN_THREAD:
+        {
+            sc_runnable_fn run = event.user.data1;
+            void *userdata = event.user.data2;
+            run(userdata);
+            break;
+        }
+        default:
+            if (has_screen && !sc_screen_handle_event(&s->screen, &event))
+            {
                 return SCRCPY_EXIT_FAILURE;
-            case SC_EVENT_CONTROLLER_ERROR:
-                LOGE("Controller error");
-                return SCRCPY_EXIT_FAILURE;
-            case SC_EVENT_RECORDER_ERROR:
-                LOGE("Recorder error");
-                return SCRCPY_EXIT_FAILURE;
-            case SC_EVENT_AOA_OPEN_ERROR:
-                LOGE("AOA open error");
-                return SCRCPY_EXIT_FAILURE;
-            case SC_EVENT_TIME_LIMIT_REACHED:
-                LOGI("Time limit reached");
-                return SCRCPY_EXIT_SUCCESS;
-            case SDL_QUIT:
-                LOGD("User requested to quit");
-                return SCRCPY_EXIT_SUCCESS;
-            case SC_EVENT_RUN_ON_MAIN_THREAD: {
-                sc_runnable_fn run = event.user.data1;
-                void *userdata = event.user.data2;
-                run(userdata);
-                break;
             }
-            default:
-                if (has_screen && !sc_screen_handle_event(&s->screen, &event)) {
-                    return SCRCPY_EXIT_FAILURE;
-                }
-                break;
+            break;
         }
     }
     return SCRCPY_EXIT_FAILURE;
 }
 
 static void
-terminate_event_loop(void) {
+terminate_event_loop(void)
+{
     sc_reject_new_runnables();
 
     SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SC_EVENT_RUN_ON_MAIN_THREAD) {
+    while (SDL_PollEvent(&event))
+    {
+        if (event.type == SC_EVENT_RUN_ON_MAIN_THREAD)
+        {
             // Make sure all posted runnables are run, to avoid memory leaks
             sc_runnable_fn run = event.user.data1;
             void *userdata = event.user.data2;
@@ -237,24 +273,29 @@ terminate_event_loop(void) {
 
 // Return true on success, false on error
 static bool
-await_for_server(bool *connected) {
+await_for_server(bool *connected)
+{
     SDL_Event event;
-    while (SDL_WaitEvent(&event)) {
-        switch (event.type) {
-            case SDL_QUIT:
-                if (connected) {
-                    *connected = false;
-                }
-                return true;
-            case SC_EVENT_SERVER_CONNECTION_FAILED:
-                return false;
-            case SC_EVENT_SERVER_CONNECTED:
-                if (connected) {
-                    *connected = true;
-                }
-                return true;
-            default:
-                break;
+    while (SDL_WaitEvent(&event))
+    {
+        switch (event.type)
+        {
+        case SDL_QUIT:
+            if (connected)
+            {
+                *connected = false;
+            }
+            return true;
+        case SC_EVENT_SERVER_CONNECTION_FAILED:
+            return false;
+        case SC_EVENT_SERVER_CONNECTED:
+            if (connected)
+            {
+                *connected = true;
+            }
+            return true;
+        default:
+            break;
         }
     }
 
@@ -264,84 +305,99 @@ await_for_server(bool *connected) {
 
 static void
 sc_recorder_on_ended(struct sc_recorder *recorder, bool success,
-                     void *userdata) {
-    (void) recorder;
-    (void) userdata;
+                     void *userdata)
+{
+    (void)recorder;
+    (void)userdata;
 
-    if (!success) {
+    if (!success)
+    {
         sc_push_event(SC_EVENT_RECORDER_ERROR);
     }
 }
 
 static void
 sc_video_demuxer_on_ended(struct sc_demuxer *demuxer,
-                          enum sc_demuxer_status status, void *userdata) {
-    (void) demuxer;
-    (void) userdata;
+                          enum sc_demuxer_status status, void *userdata)
+{
+    (void)demuxer;
+    (void)userdata;
 
     // The device may not decide to disable the video
     assert(status != SC_DEMUXER_STATUS_DISABLED);
 
-    if (status == SC_DEMUXER_STATUS_EOS) {
+    if (status == SC_DEMUXER_STATUS_EOS)
+    {
         sc_push_event(SC_EVENT_DEVICE_DISCONNECTED);
-    } else {
+    }
+    else
+    {
         sc_push_event(SC_EVENT_DEMUXER_ERROR);
     }
 }
 
 static void
 sc_audio_demuxer_on_ended(struct sc_demuxer *demuxer,
-                          enum sc_demuxer_status status, void *userdata) {
-    (void) demuxer;
+                          enum sc_demuxer_status status, void *userdata)
+{
+    (void)demuxer;
 
     const struct scrcpy_options *options = userdata;
 
     // Contrary to the video demuxer, keep mirroring if only the audio fails
     // (unless --require-audio is set).
-    if (status == SC_DEMUXER_STATUS_EOS) {
+    if (status == SC_DEMUXER_STATUS_EOS)
+    {
         sc_push_event(SC_EVENT_DEVICE_DISCONNECTED);
-    } else if (status == SC_DEMUXER_STATUS_ERROR
-            || (status == SC_DEMUXER_STATUS_DISABLED
-                && options->require_audio)) {
+    }
+    else if (status == SC_DEMUXER_STATUS_ERROR || (status == SC_DEMUXER_STATUS_DISABLED && options->require_audio))
+    {
         sc_push_event(SC_EVENT_DEMUXER_ERROR);
     }
 }
 
 static void
 sc_controller_on_ended(struct sc_controller *controller, bool error,
-                       void *userdata) {
+                       void *userdata)
+{
     // Note: this function may be called twice, once from the controller thread
     // and once from the receiver thread
-    (void) controller;
-    (void) userdata;
+    (void)controller;
+    (void)userdata;
 
-    if (error) {
+    if (error)
+    {
         sc_push_event(SC_EVENT_CONTROLLER_ERROR);
-    } else {
+    }
+    else
+    {
         sc_push_event(SC_EVENT_DEVICE_DISCONNECTED);
     }
 }
 
 static void
-sc_server_on_connection_failed(struct sc_server *server, void *userdata) {
-    (void) server;
-    (void) userdata;
+sc_server_on_connection_failed(struct sc_server *server, void *userdata)
+{
+    (void)server;
+    (void)userdata;
 
     sc_push_event(SC_EVENT_SERVER_CONNECTION_FAILED);
 }
 
 static void
-sc_server_on_connected(struct sc_server *server, void *userdata) {
-    (void) server;
-    (void) userdata;
+sc_server_on_connected(struct sc_server *server, void *userdata)
+{
+    (void)server;
+    (void)userdata;
 
     sc_push_event(SC_EVENT_SERVER_CONNECTED);
 }
 
 static void
-sc_server_on_disconnected(struct sc_server *server, void *userdata) {
-    (void) server;
-    (void) userdata;
+sc_server_on_disconnected(struct sc_server *server, void *userdata)
+{
+    (void)server;
+    (void)userdata;
 
     LOGD("Server disconnected");
     // Do nothing, the disconnection will be handled by the "stream stopped"
@@ -349,16 +405,18 @@ sc_server_on_disconnected(struct sc_server *server, void *userdata) {
 }
 
 static void
-sc_timeout_on_timeout(struct sc_timeout *timeout, void *userdata) {
-    (void) timeout;
-    (void) userdata;
+sc_timeout_on_timeout(struct sc_timeout *timeout, void *userdata)
+{
+    (void)timeout;
+    (void)userdata;
 
     sc_push_event(SC_EVENT_TIME_LIMIT_REACHED);
 }
 
 // Generate a scrcpy id to differentiate multiple running scrcpy instances
 static uint32_t
-scrcpy_generate_scid(void) {
+scrcpy_generate_scid(void)
+{
     struct sc_rand rand;
     sc_rand_init(&rand);
     // Only use 31 bits to avoid issues with signed values on the Java-side
@@ -366,12 +424,15 @@ scrcpy_generate_scid(void) {
 }
 
 static void
-init_sdl_gamepads(void) {
+init_sdl_gamepads(void)
+{
     // Trigger a SDL_CONTROLLERDEVICEADDED event for all gamepads already
     // connected
     int num_joysticks = SDL_NumJoysticks();
-    for (int i = 0; i < num_joysticks; ++i) {
-        if (SDL_IsGameController(i)) {
+    for (int i = 0; i < num_joysticks; ++i)
+    {
+        if (SDL_IsGameController(i))
+        {
             SDL_Event event;
             event.cdevice.type = SDL_CONTROLLERDEVICEADDED;
             event.cdevice.which = i;
@@ -381,7 +442,8 @@ init_sdl_gamepads(void) {
 }
 
 enum scrcpy_exit_code
-scrcpy(struct scrcpy_options *options) {
+scrcpy(struct scrcpy_options *options)
+{
     static struct scrcpy scrcpy;
 #ifndef NDEBUG
     // Detect missing initializations
@@ -389,8 +451,27 @@ scrcpy(struct scrcpy_options *options) {
 #endif
     struct scrcpy *s = &scrcpy;
 
+    // Hide from Dock (macOS) or taskbar (Windows) BEFORE SDL initialization
+    if (options->linkandroid_skip_taskbar)
+    {
+#ifdef __APPLE__
+        // On macOS, must set activation policy before SDL creates windows
+        sc_hide_from_dock();
+        LOGD("Application hidden from Dock");
+#elif defined(_WIN32)
+        // On Windows, hide the console window
+        HWND hwnd = GetConsoleWindow();
+        if (hwnd)
+        {
+            ShowWindow(hwnd, SW_HIDE);
+            LOGD("Console window hidden from taskbar");
+        }
+#endif
+    }
+
     // Minimal SDL initialization
-    if (SDL_Init(SDL_INIT_EVENTS)) {
+    if (SDL_Init(SDL_INIT_EVENTS))
+    {
         LOGE("Could not initialize SDL: %s", SDL_GetError());
         return SCRCPY_EXIT_FAILURE;
     }
@@ -484,23 +565,27 @@ scrcpy(struct scrcpy_options *options) {
         .on_connected = sc_server_on_connected,
         .on_disconnected = sc_server_on_disconnected,
     };
-    if (!sc_server_init(&s->server, &params, &cbs, NULL)) {
+    if (!sc_server_init(&s->server, &params, &cbs, NULL))
+    {
         return SCRCPY_EXIT_FAILURE;
     }
 
-    if (options->window) {
+    if (options->window)
+    {
         // Set hints before starting the server thread to avoid race conditions
         // in SDL
         sdl_set_hints(options->render_driver);
     }
 
-    if (!sc_server_start(&s->server)) {
+    if (!sc_server_start(&s->server))
+    {
         goto end;
     }
 
     server_started = true;
 
-    if (options->list) {
+    if (options->list)
+    {
         bool ok = await_for_server(NULL);
         ret = ok ? SCRCPY_EXIT_SUCCESS : SCRCPY_EXIT_FAILURE;
         goto end;
@@ -511,31 +596,40 @@ scrcpy(struct scrcpy_options *options) {
     assert(!options->audio_playback || options->audio);
 
     if (options->window ||
-            (options->control && options->clipboard_autosync)) {
+        (options->control && options->clipboard_autosync))
+    {
         // Initialize the video subsystem even if --no-video or
         // --no-video-playback is passed so that clipboard synchronization
         // still works.
         // <https://github.com/Genymobile/scrcpy/issues/4418>
-        if (SDL_Init(SDL_INIT_VIDEO)) {
+        if (SDL_Init(SDL_INIT_VIDEO))
+        {
             // If it fails, it is an error only if video playback is enabled
-            if (options->video_playback) {
+            if (options->video_playback)
+            {
                 LOGE("Could not initialize SDL video: %s", SDL_GetError());
                 goto end;
-            } else {
+            }
+            else
+            {
                 LOGW("Could not initialize SDL video: %s", SDL_GetError());
             }
         }
     }
 
-    if (options->audio_playback) {
-        if (SDL_Init(SDL_INIT_AUDIO)) {
+    if (options->audio_playback)
+    {
+        if (SDL_Init(SDL_INIT_AUDIO))
+        {
             LOGE("Could not initialize SDL audio: %s", SDL_GetError());
             goto end;
         }
     }
 
-    if (options->gamepad_input_mode != SC_GAMEPAD_INPUT_MODE_DISABLED) {
-        if (SDL_Init(SDL_INIT_GAMECONTROLLER)) {
+    if (options->gamepad_input_mode != SC_GAMEPAD_INPUT_MODE_DISABLED)
+    {
+        if (SDL_Init(SDL_INIT_GAMECONTROLLER))
+        {
             LOGE("Could not initialize SDL gamepad: %s", SDL_GetError());
             goto end;
         }
@@ -545,12 +639,14 @@ scrcpy(struct scrcpy_options *options) {
 
     // Await for server without blocking Ctrl+C handling
     bool connected;
-    if (!await_for_server(&connected)) {
+    if (!await_for_server(&connected))
+    {
         LOGE("Server connection failed");
         goto end;
     }
 
-    if (!connected) {
+    if (!connected)
+    {
         // This is not an error, user requested to quit
         LOGD("User requested to quit");
         ret = SCRCPY_EXIT_SUCCESS;
@@ -567,16 +663,19 @@ scrcpy(struct scrcpy_options *options) {
 
     struct sc_file_pusher *fp = NULL;
 
-    if (options->video_playback && options->control) {
+    if (options->video_playback && options->control)
+    {
         if (!sc_file_pusher_init(&s->file_pusher, serial,
-                                 options->push_target)) {
+                                 options->push_target))
+        {
             goto end;
         }
         fp = &s->file_pusher;
         file_pusher_initialized = true;
     }
 
-    if (options->video) {
+    if (options->video)
+    {
         static const struct sc_demuxer_callbacks video_demuxer_cbs = {
             .on_ended = sc_video_demuxer_on_ended,
         };
@@ -584,7 +683,8 @@ scrcpy(struct scrcpy_options *options) {
                         &video_demuxer_cbs, NULL);
     }
 
-    if (options->audio) {
+    if (options->audio)
+    {
         static const struct sc_demuxer_callbacks audio_demuxer_cbs = {
             .on_ended = sc_audio_demuxer_on_ended,
         };
@@ -592,44 +692,53 @@ scrcpy(struct scrcpy_options *options) {
                         &audio_demuxer_cbs, options);
     }
 
-    bool needs_video_decoder = options->video_playback;
+    // LinkAndroid: Video decoder is needed for playback OR for preview sending
+    bool needs_video_decoder = options->video_playback ||
+                               (options->linkandroid_server && options->linkandroid_preview_interval > 0);
     bool needs_audio_decoder = options->audio_playback;
 #ifdef HAVE_V4L2
     needs_video_decoder |= !!options->v4l2_device;
 #endif
-    if (needs_video_decoder) {
+    if (needs_video_decoder)
+    {
         sc_decoder_init(&s->video_decoder, "video");
         sc_packet_source_add_sink(&s->video_demuxer.packet_source,
                                   &s->video_decoder.packet_sink);
     }
-    if (needs_audio_decoder) {
+    if (needs_audio_decoder)
+    {
         sc_decoder_init(&s->audio_decoder, "audio");
         sc_packet_source_add_sink(&s->audio_demuxer.packet_source,
                                   &s->audio_decoder.packet_sink);
     }
 
-    if (options->record_filename) {
+    if (options->record_filename)
+    {
         static const struct sc_recorder_callbacks recorder_cbs = {
             .on_ended = sc_recorder_on_ended,
         };
         if (!sc_recorder_init(&s->recorder, options->record_filename,
                               options->record_format, options->video,
                               options->audio, options->record_orientation,
-                              &recorder_cbs, NULL)) {
+                              &recorder_cbs, NULL))
+        {
             goto end;
         }
         recorder_initialized = true;
 
-        if (!sc_recorder_start(&s->recorder)) {
+        if (!sc_recorder_start(&s->recorder))
+        {
             goto end;
         }
         recorder_started = true;
 
-        if (options->video) {
+        if (options->video)
+        {
             sc_packet_source_add_sink(&s->video_demuxer.packet_source,
                                       &s->recorder.video_packet_sink);
         }
-        if (options->audio) {
+        if (options->audio)
+        {
             sc_packet_source_add_sink(&s->audio_demuxer.packet_source,
                                       &s->recorder.audio_packet_sink);
         }
@@ -640,13 +749,15 @@ scrcpy(struct scrcpy_options *options) {
     struct sc_mouse_processor *mp = NULL;
     struct sc_gamepad_processor *gp = NULL;
 
-    if (options->control) {
+    if (options->control)
+    {
         static const struct sc_controller_callbacks controller_cbs = {
             .on_ended = sc_controller_on_ended,
         };
 
         if (!sc_controller_init(&s->controller, s->server.control_socket,
-            &controller_cbs, NULL)) {
+                                &controller_cbs, NULL))
+        {
             goto end;
         }
         controller_initialized = true;
@@ -660,14 +771,17 @@ scrcpy(struct scrcpy_options *options) {
             options->mouse_input_mode == SC_MOUSE_INPUT_MODE_AOA;
         bool use_gamepad_aoa =
             options->gamepad_input_mode == SC_GAMEPAD_INPUT_MODE_AOA;
-        if (use_keyboard_aoa || use_mouse_aoa || use_gamepad_aoa) {
+        if (use_keyboard_aoa || use_mouse_aoa || use_gamepad_aoa)
+        {
             bool ok = sc_acksync_init(&s->acksync);
-            if (!ok) {
+            if (!ok)
+            {
                 goto end;
             }
 
             ok = sc_usb_init(&s->usb);
-            if (!ok) {
+            if (!ok)
+            {
                 LOGE("Failed to initialize USB");
                 sc_acksync_destroy(&s->acksync);
                 goto end;
@@ -676,7 +790,8 @@ scrcpy(struct scrcpy_options *options) {
             assert(serial);
             struct sc_usb_device usb_device;
             ok = sc_usb_select_device(&s->usb, serial, &usb_device);
-            if (!ok) {
+            if (!ok)
+            {
                 sc_usb_destroy(&s->usb);
                 goto end;
             }
@@ -687,7 +802,8 @@ scrcpy(struct scrcpy_options *options) {
 
             ok = sc_usb_connect(&s->usb, usb_device.device, NULL, NULL);
             sc_usb_device_destroy(&usb_device);
-            if (!ok) {
+            if (!ok)
+            {
                 LOGE("Failed to connect to USB device %s", serial);
                 sc_usb_destroy(&s->usb);
                 sc_acksync_destroy(&s->acksync);
@@ -695,7 +811,8 @@ scrcpy(struct scrcpy_options *options) {
             }
 
             ok = sc_aoa_init(&s->aoa, &s->usb, &s->acksync);
-            if (!ok) {
+            if (!ok)
+            {
                 LOGE("Failed to enable HID over AOA");
                 sc_usb_disconnect(&s->usb);
                 sc_usb_destroy(&s->usb);
@@ -704,36 +821,46 @@ scrcpy(struct scrcpy_options *options) {
             }
 
             bool aoa_fail = false;
-            if (use_keyboard_aoa) {
-                if (sc_keyboard_aoa_init(&s->keyboard_aoa, &s->aoa)) {
+            if (use_keyboard_aoa)
+            {
+                if (sc_keyboard_aoa_init(&s->keyboard_aoa, &s->aoa))
+                {
                     keyboard_aoa_initialized = true;
                     kp = &s->keyboard_aoa.key_processor;
-                } else {
+                }
+                else
+                {
                     LOGE("Could not initialize HID keyboard");
                     aoa_fail = true;
                     goto aoa_complete;
                 }
             }
 
-            if (use_mouse_aoa) {
-                if (sc_mouse_aoa_init(&s->mouse_aoa, &s->aoa)) {
+            if (use_mouse_aoa)
+            {
+                if (sc_mouse_aoa_init(&s->mouse_aoa, &s->aoa))
+                {
                     mouse_aoa_initialized = true;
                     mp = &s->mouse_aoa.mouse_processor;
-                } else {
+                }
+                else
+                {
                     LOGE("Could not initialized HID mouse");
                     aoa_fail = true;
                     goto aoa_complete;
                 }
             }
 
-            if (use_gamepad_aoa) {
+            if (use_gamepad_aoa)
+            {
                 sc_gamepad_aoa_init(&s->gamepad_aoa, &s->aoa);
                 gp = &s->gamepad_aoa.gamepad_processor;
                 gamepad_aoa_initialized = true;
             }
 
-aoa_complete:
-            if (aoa_fail || !sc_aoa_start(&s->aoa)) {
+        aoa_complete:
+            if (aoa_fail || !sc_aoa_start(&s->aoa))
+            {
                 sc_acksync_destroy(&s->acksync);
                 sc_usb_disconnect(&s->usb);
                 sc_usb_destroy(&s->usb);
@@ -752,47 +879,57 @@ aoa_complete:
 
         struct sc_keyboard_uhid *uhid_keyboard = NULL;
 
-        if (options->keyboard_input_mode == SC_KEYBOARD_INPUT_MODE_SDK) {
+        if (options->keyboard_input_mode == SC_KEYBOARD_INPUT_MODE_SDK)
+        {
             sc_keyboard_sdk_init(&s->keyboard_sdk, &s->controller,
                                  options->key_inject_mode,
                                  options->forward_key_repeat);
             kp = &s->keyboard_sdk.key_processor;
-        } else if (options->keyboard_input_mode
-                == SC_KEYBOARD_INPUT_MODE_UHID) {
+        }
+        else if (options->keyboard_input_mode == SC_KEYBOARD_INPUT_MODE_UHID)
+        {
             bool ok = sc_keyboard_uhid_init(&s->keyboard_uhid, &s->controller);
-            if (!ok) {
+            if (!ok)
+            {
                 goto end;
             }
             kp = &s->keyboard_uhid.key_processor;
             uhid_keyboard = &s->keyboard_uhid;
         }
 
-        if (options->mouse_input_mode == SC_MOUSE_INPUT_MODE_SDK) {
+        if (options->mouse_input_mode == SC_MOUSE_INPUT_MODE_SDK)
+        {
             sc_mouse_sdk_init(&s->mouse_sdk, &s->controller,
                               options->mouse_hover);
             mp = &s->mouse_sdk.mouse_processor;
-        } else if (options->mouse_input_mode == SC_MOUSE_INPUT_MODE_UHID) {
+        }
+        else if (options->mouse_input_mode == SC_MOUSE_INPUT_MODE_UHID)
+        {
             bool ok = sc_mouse_uhid_init(&s->mouse_uhid, &s->controller);
-            if (!ok) {
+            if (!ok)
+            {
                 goto end;
             }
             mp = &s->mouse_uhid.mouse_processor;
         }
 
-        if (options->gamepad_input_mode == SC_GAMEPAD_INPUT_MODE_UHID) {
+        if (options->gamepad_input_mode == SC_GAMEPAD_INPUT_MODE_UHID)
+        {
             sc_gamepad_uhid_init(&s->gamepad_uhid, &s->controller);
             gp = &s->gamepad_uhid.gamepad_processor;
         }
 
         struct sc_uhid_devices *uhid_devices = NULL;
-        if (uhid_keyboard) {
+        if (uhid_keyboard)
+        {
             sc_uhid_devices_init(&s->uhid_devices, uhid_keyboard);
             uhid_devices = &s->uhid_devices;
         }
 
         sc_controller_configure(&s->controller, acksync, uhid_devices);
 
-        if (!sc_controller_start(&s->controller)) {
+        if (!sc_controller_start(&s->controller))
+        {
             goto end;
         }
         controller_started = true;
@@ -801,12 +938,17 @@ aoa_complete:
     // There is a controller if and only if control is enabled
     assert(options->control == !!controller);
 
-    if (options->window) {
+    if (options->window)
+    {
         const char *window_title =
             options->window_title ? options->window_title : info->device_name;
 
+        // LinkAndroid: Screen needs video=true if either playback or preview is enabled
+        bool screen_needs_video = options->video_playback ||
+                                  (options->linkandroid_server && options->linkandroid_preview_interval > 0);
+
         struct sc_screen_params screen_params = {
-            .video = options->video_playback,
+            .video = screen_needs_video,
             .controller = controller,
             .fp = fp,
             .kp = kp,
@@ -828,21 +970,32 @@ aoa_complete:
             .fullscreen = options->fullscreen,
             .start_fps_counter = options->start_fps_counter,
             .panel_show = options->linkandroid_panel_show,
+            // LinkAndroid: Hide window if preview is enabled but video playback is disabled
+            .hide_window = !options->video_playback && options->linkandroid_preview_interval > 0,
         };
 
-        if (!sc_screen_init(&s->screen, &screen_params)) {
+        if (!sc_screen_init(&s->screen, &screen_params))
+        {
             goto end;
         }
         screen_initialized = true;
 
         // LinkAndroid: Initialize WebSocket client for event forwarding
-        if (options->linkandroid_server) {
+        if (options->linkandroid_server)
+        {
             sc_input_manager_init_websocket(&s->screen.im, options->linkandroid_server);
         }
 
-        if (options->video_playback) {
+        // LinkAndroid: Connect video frames to screen if video playback is enabled
+        // OR if preview sender is enabled (so it can capture frames)
+        bool need_screen_frames = options->video_playback ||
+                                  (options->linkandroid_server && options->linkandroid_preview_interval > 0);
+
+        if (need_screen_frames)
+        {
             struct sc_frame_source *src = &s->video_decoder.frame_source;
-            if (options->video_buffer) {
+            if (options->video_buffer)
+            {
                 sc_delay_buffer_init(&s->video_buffer,
                                      options->video_buffer, true);
                 sc_frame_source_add_sink(src, &s->video_buffer.frame_sink);
@@ -853,7 +1006,39 @@ aoa_complete:
         }
     }
 
-    if (options->audio_playback) {
+    // LinkAndroid: Initialize preview sender if enabled
+    bool preview_sender_initialized = false;
+    bool preview_sender_started = false;
+    if (options->linkandroid_server && options->linkandroid_preview_interval > 0)
+    {
+        // Get the global websocket client
+        extern struct la_websocket_client *g_websocket_client;
+
+        if (g_websocket_client && screen_initialized)
+        {
+            bool ok = la_preview_sender_init(&s->preview_sender,
+                                             g_websocket_client,
+                                             &s->screen,
+                                             options->linkandroid_preview_interval);
+            if (ok)
+            {
+                preview_sender_initialized = true;
+                LOGI("LinkAndroid preview sender initialized (interval: %u ms)",
+                     options->linkandroid_preview_interval);
+            }
+            else
+            {
+                LOGW("Failed to initialize preview sender");
+            }
+        }
+        else
+        {
+            LOGW("Cannot initialize preview sender: WebSocket client or screen not available");
+        }
+    }
+
+    if (options->audio_playback)
+    {
         sc_audio_player_init(&s->audio_player, options->audio_buffer,
                              options->audio_output_buffer);
         sc_frame_source_add_sink(&s->audio_decoder.frame_source,
@@ -861,13 +1046,16 @@ aoa_complete:
     }
 
 #ifdef HAVE_V4L2
-    if (options->v4l2_device) {
-        if (!sc_v4l2_sink_init(&s->v4l2_sink, options->v4l2_device)) {
+    if (options->v4l2_device)
+    {
+        if (!sc_v4l2_sink_init(&s->v4l2_sink, options->v4l2_device))
+        {
             goto end;
         }
 
         struct sc_frame_source *src = &s->video_decoder.frame_source;
-        if (options->v4l2_buffer) {
+        if (options->v4l2_buffer)
+        {
             sc_delay_buffer_init(&s->v4l2_buffer, options->v4l2_buffer, true);
             sc_frame_source_add_sink(src, &s->v4l2_buffer.frame_sink);
             src = &s->v4l2_buffer.frame_source;
@@ -882,35 +1070,57 @@ aoa_complete:
     // Now that the header values have been consumed, the socket(s) will
     // receive the stream(s). Start the demuxer(s).
 
-    if (options->video) {
-        if (!sc_demuxer_start(&s->video_demuxer)) {
+    if (options->video)
+    {
+        if (!sc_demuxer_start(&s->video_demuxer))
+        {
             goto end;
         }
         video_demuxer_started = true;
     }
 
-    if (options->audio) {
-        if (!sc_demuxer_start(&s->audio_demuxer)) {
+    if (options->audio)
+    {
+        if (!sc_demuxer_start(&s->audio_demuxer))
+        {
             goto end;
         }
         audio_demuxer_started = true;
     }
 
+    // LinkAndroid: Start preview sender after demuxers are started
+    if (preview_sender_initialized)
+    {
+        if (la_preview_sender_start(&s->preview_sender))
+        {
+            preview_sender_started = true;
+            LOGI("LinkAndroid preview sender started");
+        }
+        else
+        {
+            LOGW("Failed to start preview sender");
+        }
+    }
+
     // If the device screen is to be turned off, send the control message after
     // everything is set up
-    if (options->control && options->turn_screen_off) {
+    if (options->control && options->turn_screen_off)
+    {
         struct sc_control_msg msg;
         msg.type = SC_CONTROL_MSG_TYPE_SET_DISPLAY_POWER;
         msg.set_display_power.on = false;
 
-        if (!sc_controller_push_msg(&s->controller, &msg)) {
+        if (!sc_controller_push_msg(&s->controller, &msg))
+        {
             LOGW("Could not request 'set display power'");
         }
     }
 
-    if (options->time_limit) {
+    if (options->time_limit)
+    {
         bool ok = sc_timeout_init(&s->timeout);
-        if (!ok) {
+        if (!ok)
+        {
             goto end;
         }
 
@@ -922,23 +1132,26 @@ aoa_complete:
         };
 
         ok = sc_timeout_start(&s->timeout, deadline, &cbs, NULL);
-        if (!ok) {
+        if (!ok)
+        {
             goto end;
         }
 
         timeout_started = true;
     }
 
-    if (options->control
-            && options->gamepad_input_mode != SC_GAMEPAD_INPUT_MODE_DISABLED) {
+    if (options->control && options->gamepad_input_mode != SC_GAMEPAD_INPUT_MODE_DISABLED)
+    {
         init_sdl_gamepads();
     }
 
-    if (options->control && options->start_app) {
+    if (options->control && options->start_app)
+    {
         assert(controller);
 
         char *name = strdup(options->start_app);
-        if (!name) {
+        if (!name)
+        {
             LOG_OOM();
             goto end;
         }
@@ -947,7 +1160,8 @@ aoa_complete:
         msg.type = SC_CONTROL_MSG_TYPE_START_APP;
         msg.start_app.name = name;
 
-        if (!sc_controller_push_msg(controller, &msg)) {
+        if (!sc_controller_push_msg(controller, &msg))
+        {
             LOGW("Could not request start app '%s'", name);
             free(name);
         }
@@ -957,7 +1171,8 @@ aoa_complete:
     terminate_event_loop();
     LOGD("quit...");
 
-    if (options->video_playback) {
+    if (options->video_playback)
+    {
         // Close the window immediately on closing, because screen_destroy()
         // may only be called once the video demuxer thread is joined (it may
         // take time)
@@ -965,73 +1180,96 @@ aoa_complete:
     }
 
 end:
-    if (timeout_started) {
+    // LinkAndroid: Stop preview sender before other cleanup
+    if (preview_sender_started)
+    {
+        la_preview_sender_stop(&s->preview_sender);
+    }
+
+    if (timeout_started)
+    {
         sc_timeout_stop(&s->timeout);
     }
 
     // The demuxer is not stopped explicitly, because it will stop by itself on
     // end-of-stream
 #ifdef HAVE_USB
-    if (aoa_hid_initialized) {
-        if (keyboard_aoa_initialized) {
+    if (aoa_hid_initialized)
+    {
+        if (keyboard_aoa_initialized)
+        {
             sc_keyboard_aoa_destroy(&s->keyboard_aoa);
         }
-        if (mouse_aoa_initialized) {
+        if (mouse_aoa_initialized)
+        {
             sc_mouse_aoa_destroy(&s->mouse_aoa);
         }
-        if (gamepad_aoa_initialized) {
+        if (gamepad_aoa_initialized)
+        {
             sc_gamepad_aoa_destroy(&s->gamepad_aoa);
         }
         sc_aoa_stop(&s->aoa);
         sc_usb_stop(&s->usb);
     }
-    if (acksync) {
+    if (acksync)
+    {
         sc_acksync_destroy(acksync);
     }
 #endif
-    if (controller_started) {
+    if (controller_started)
+    {
         sc_controller_stop(&s->controller);
     }
-    if (file_pusher_initialized) {
+    if (file_pusher_initialized)
+    {
         sc_file_pusher_stop(&s->file_pusher);
     }
-    if (recorder_initialized) {
+    if (recorder_initialized)
+    {
         sc_recorder_stop(&s->recorder);
     }
-    if (screen_initialized) {
+    if (screen_initialized)
+    {
         sc_screen_interrupt(&s->screen);
     }
 
-    if (server_started) {
+    if (server_started)
+    {
         // shutdown the sockets and kill the server
         sc_server_stop(&s->server);
     }
 
-    if (timeout_started) {
+    if (timeout_started)
+    {
         sc_timeout_join(&s->timeout);
     }
-    if (timeout_initialized) {
+    if (timeout_initialized)
+    {
         sc_timeout_destroy(&s->timeout);
     }
 
     // now that the sockets are shutdown, the demuxer and controller are
     // interrupted, we can join them
-    if (video_demuxer_started) {
+    if (video_demuxer_started)
+    {
         sc_demuxer_join(&s->video_demuxer);
     }
 
-    if (audio_demuxer_started) {
+    if (audio_demuxer_started)
+    {
         sc_demuxer_join(&s->audio_demuxer);
     }
 
 #ifdef HAVE_V4L2
-    if (v4l2_sink_initialized) {
+    if (v4l2_sink_initialized)
+    {
         sc_v4l2_sink_destroy(&s->v4l2_sink);
     }
 #endif
 
 #ifdef HAVE_USB
-    if (aoa_hid_initialized) {
+    if (aoa_hid_initialized)
+    {
         sc_aoa_join(&s->aoa);
         sc_aoa_destroy(&s->aoa);
         sc_usb_join(&s->usb);
@@ -1043,35 +1281,48 @@ end:
     // Destroy the screen only after the video demuxer is guaranteed to be
     // finished, because otherwise the screen could receive new frames after
     // destruction
-    if (screen_initialized) {
+    if (screen_initialized)
+    {
         sc_screen_join(&s->screen);
         sc_screen_destroy(&s->screen);
     }
 
-    if (controller_started) {
+    if (controller_started)
+    {
         sc_controller_join(&s->controller);
     }
-    if (controller_initialized) {
+    if (controller_initialized)
+    {
         sc_controller_destroy(&s->controller);
     }
 
-    if (recorder_started) {
+    if (recorder_started)
+    {
         sc_recorder_join(&s->recorder);
     }
-    if (recorder_initialized) {
+    if (recorder_initialized)
+    {
         sc_recorder_destroy(&s->recorder);
     }
 
-    if (file_pusher_initialized) {
+    if (file_pusher_initialized)
+    {
         sc_file_pusher_join(&s->file_pusher);
         sc_file_pusher_destroy(&s->file_pusher);
     }
 
-    if (server_started) {
+    if (server_started)
+    {
         sc_server_join(&s->server);
     }
 
     sc_server_destroy(&s->server);
+
+    // LinkAndroid: Destroy preview sender
+    if (preview_sender_initialized)
+    {
+        la_preview_sender_destroy(&s->preview_sender);
+    }
 
     // LinkAndroid: Cleanup WebSocket client
     sc_input_manager_cleanup_websocket();

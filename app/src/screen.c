@@ -600,6 +600,7 @@ bool sc_screen_init(struct sc_screen *screen,
     screen->req.height = params->window_height;
     screen->req.fullscreen = params->fullscreen;
     screen->req.start_fps_counter = params->start_fps_counter;
+    screen->req.hide_window = params->hide_window; // LinkAndroid
 
     bool ok = sc_frame_buffer_init(&screen->fb);
     if (!ok)
@@ -766,6 +767,14 @@ error_destroy_frame_buffer:
 static void
 sc_screen_show_initial_window(struct sc_screen *screen)
 {
+    // LinkAndroid: Don't show window if hide_window is requested
+    if (screen->req.hide_window)
+    {
+        // Skip showing the window, but still update content rect
+        sc_screen_update_content_rect(screen);
+        return;
+    }
+
     int x = screen->req.x != SC_WINDOW_POSITION_UNDEFINED
                 ? screen->req.x
                 : (int)SDL_WINDOWPOS_CENTERED;
@@ -1422,6 +1431,14 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
 
     if (strcmp(type_item->valuestring, "panel") != 0)
     {
+        cJSON_Delete(root);
+        return;
+    }
+
+    // Ignore panel data if --linkandroid-panel-show was not specified
+    if (!screen->panel.visible)
+    {
+        LOGD("Panel data received but panel display is disabled (use --linkandroid-panel-show to enable)");
         cJSON_Delete(root);
         return;
     }

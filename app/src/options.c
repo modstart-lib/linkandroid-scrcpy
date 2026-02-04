@@ -115,10 +115,13 @@ const struct scrcpy_options scrcpy_options_default = {
     .vd_system_decorations = true,
     .linkandroid_server = NULL,
     .linkandroid_panel_show = false,
+    .linkandroid_preview_interval = 0, // disabled by default
+    .linkandroid_skip_taskbar = false,
 };
 
 enum sc_orientation
-sc_orientation_apply(enum sc_orientation src, enum sc_orientation transform) {
+sc_orientation_apply(enum sc_orientation src, enum sc_orientation transform)
+{
     assert(!(src & ~7));
     assert(!(transform & ~7));
 
@@ -127,7 +130,8 @@ sc_orientation_apply(enum sc_orientation src, enum sc_orientation transform) {
     unsigned src_hflip = src & 4;
     unsigned src_rotation = src & 3;
     unsigned src_swap = src & 1;
-    if (src_swap && transform_hflip) {
+    if (src_swap && transform_hflip)
+    {
         // If the src is rotated by 90 or 270 degrees, applying a flipped
         // transformation requires an additional 180 degrees rotation to
         // compensate for the inversion of the order of multiplication:

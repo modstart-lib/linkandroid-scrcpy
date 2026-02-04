@@ -21,13 +21,13 @@ cd .. # root project dir
 WINXX_BUILD_DIR="$WORK_DIR/build-$WINXX"
 
 app/deps/adb_windows.sh
-app/deps/sdl.sh $WINXX cross shared
-app/deps/dav1d.sh $WINXX cross shared
-app/deps/ffmpeg.sh $WINXX cross shared
-app/deps/libusb.sh $WINXX cross shared
-app/deps/libwebsockets.sh $WINXX cross shared
+app/deps/sdl.sh $WINXX cross static
+app/deps/dav1d.sh $WINXX cross static
+app/deps/ffmpeg.sh $WINXX cross static
+app/deps/libusb.sh $WINXX cross static
+app/deps/libwebsockets.sh $WINXX cross static
 
-DEPS_INSTALL_DIR="$PWD/app/deps/work/install/$WINXX-cross-shared"
+DEPS_INSTALL_DIR="$PWD/app/deps/work/install/$WINXX-cross-static"
 ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-windows"
 
 rm -rf "$WINXX_BUILD_DIR"
@@ -40,7 +40,8 @@ meson setup "$WINXX_BUILD_DIR" \
     --strip \
     -Db_lto=true \
     -Dcompile_server=false \
-    -Dportable=true
+    -Dportable=true \
+    -Dstatic=true
 ninja -C "$WINXX_BUILD_DIR"
 
 # Group intermediate outputs into a 'dist' directory

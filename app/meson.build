@@ -168,6 +168,7 @@ endif
 if host_machine.system() == 'windows'
     dependencies += cc.find_library('mingw32')
     dependencies += cc.find_library('ws2_32')
+    dependencies += cc.find_library('pthread')
 endif
 
 if host_machine.system() == 'darwin'

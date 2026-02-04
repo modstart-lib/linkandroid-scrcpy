@@ -18,6 +18,7 @@ app/deps/sdl.sh linux native static
 app/deps/dav1d.sh linux native static
 app/deps/ffmpeg.sh linux native static
 app/deps/libusb.sh linux native static
+app/deps/libwebsockets.sh linux native static
 
 DEPS_INSTALL_DIR="$PWD/app/deps/work/install/linux-native-static"
 ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-linux"

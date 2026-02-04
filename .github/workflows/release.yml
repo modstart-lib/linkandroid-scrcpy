@@ -100,13 +100,18 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
-             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
-             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
-             libv4l-dev libwebsockets-dev
+          sudo apt-get update
+          sudo apt-get install -y \
+            meson ninja-build nasm pkg-config \
+            gcc g++ make cmake autoconf automake libtool \
+            python3 python3-pip wget curl git \
+            libx11-dev libxext-dev libxfixes-dev libxi-dev \
+            libxrandr-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libpulse-dev libasound2-dev libjack-dev \
+            libsamplerate0-dev libsndio-dev libwayland-dev \
+            libxkbcommon-dev libdrm-dev libgbm-dev
 
-      - name: Build
+      - name: Build (Static)
         run: release/build_linux.sh x86_64
 
       # upload-artifact does not preserve permissions
@@ -131,13 +136,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
-             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
-             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
-             mingw-w64 mingw-w64-tools libz-mingw-w64-dev cmake
+          sudo apt-get update
+          sudo apt-get install -y \
+            meson ninja-build nasm pkg-config \
+            mingw-w64 mingw-w64-tools \
+            gcc-mingw-w64-i686 g++-mingw-w64-i686 \
+            libz-mingw-w64-dev cmake autoconf automake libtool \
+            wget curl git
 
-      - name: Build
+      - name: Build (Static)
         run: release/build_windows.sh 32
 
       # upload-artifact does not preserve permissions
@@ -160,13 +167,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y meson ninja-build nasm ffmpeg libsdl2-2.0-0 \
-             libsdl2-dev libavcodec-dev libavdevice-dev libavformat-dev \
-             libavutil-dev libswresample-dev libusb-1.0-0 libusb-1.0-0-dev \
-             mingw-w64 mingw-w64-tools libz-mingw-w64-dev cmake
+      - name: Inst-get update
+          sudo apt-get install -y \
+            meson ninja-build nasm pkg-config \
+            mingw-w64 mingw-w64-tools \
+            gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+            libz-mingw-w64-dev cmake autoconf automake libtool \
+            wget curl git
+
+      - name: Build (Static)w64 mingw-w64-tools libz-mingw-w64-dev cmake
 
       - name: Build
         run: release/build_windows.sh 64
@@ -184,9 +193,7 @@ jobs:
         with:
           name: build-win64-intermediate
           path: release/work/build-win64/dist-tar/
-
-  build-macos-aarch64:
-    runs-on: macos-latest
+14
     steps:
       - name: Check architecture
         run: |
@@ -202,7 +209,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-            brew install meson nasm libiconv zlib automake autoconf libtool libwebsockets openssl@3
+            brew update
+            brew install meson ninja nasm pkg-config automake autoconf libtool
+
+      - name: Build (Static)stall meson nasm libiconv zlib automake autoconf libtool libwebsockets openssl@3
 
       - name: Build
         env:
@@ -226,10 +236,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-macos-aarch64-intermediate
-          path: release/work/build-macos-aarch64/dist-tar/
-
-  build-macos-x86_64:
-    runs-on: macos-15-intel
+          path: rele3
     steps:
       - name: Check architecture
         run: |
@@ -244,7 +251,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install meson nasm libiconv zlib automake libwebsockets openssl@3
+        run: |
+            brew update
+            brew install meson ninja nasm pkg-config automake autoconf libtool
+
+      - name: Build (Static)nstall meson nasm libiconv zlib automake libwebsockets openssl@3
              # autoconf and libtool are already installed on macos-13
 
       - name: Build

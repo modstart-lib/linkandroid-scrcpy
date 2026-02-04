@@ -18,6 +18,7 @@ app/deps/sdl.sh macos native static
 app/deps/dav1d.sh macos native static
 app/deps/ffmpeg.sh macos native static
 app/deps/libusb.sh macos native static
+app/deps/libwebsockets.sh macos native static
 
 DEPS_INSTALL_DIR="$PWD/app/deps/work/install/macos-native-static"
 ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-macos"

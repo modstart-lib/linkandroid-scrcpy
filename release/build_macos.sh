@@ -38,7 +38,8 @@ meson setup "$MACOS_BUILD_DIR" \
     --buildtype=release \
     --strip \
     -Db_lto=true \
-    -Dcompile_server=true
+    -Dcompile_server=true \
+    -Dportable=true
 ninja -C "$MACOS_BUILD_DIR"
 
 # Group intermediate outputs into a 'dist' directory

@@ -195,7 +195,7 @@ jobs:
           path: release/work/build-win64/dist-tar/
 
   build-macos-aarch64:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Check architecture
         run: |
@@ -239,7 +239,7 @@ jobs:
           path: release/work/build-macos-aarch64/dist-tar/
 
   build-macos-x86_64:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - name: Check architecture
         run: |
@@ -261,7 +261,7 @@ jobs:
       - name: Build (Static)
         env:
           # the default Xcode (and macOS SDK) version can be found at
-          # <https://github.com/actions/runner-images/blob/main/images/macos/macos-13-Readme.md#xcode>
+          # <https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md#xcode>
           #
           # then the minimal supported deployment target of that macOS SDK can be found at
           # <https://developer.apple.com/support/xcode/#minimum-requirements>

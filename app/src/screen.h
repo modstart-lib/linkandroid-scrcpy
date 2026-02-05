@@ -107,6 +107,9 @@ struct sc_screen
     SDL_Cursor *hand_cursor;  // Hand cursor for button hover
     SDL_Cursor *arrow_cursor; // Default arrow cursor
     bool cursor_is_hand;      // Track current cursor state
+
+    // LinkAndroid: Track if ready event has been sent to WebSocket server
+    bool ready_event_sent;
 };
 
 struct sc_screen_params

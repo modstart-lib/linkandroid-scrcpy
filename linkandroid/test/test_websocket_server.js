@@ -33,15 +33,8 @@ console.log(`Listening on: ws://127.0.0.1:${PORT}${PATH}`);
 console.log(`Waiting for scrcpy connection...`);
 console.log(`==============================================\n`);
 
-wss.on('connection', (ws, req) => {
-  const clientIp = req.socket.remoteAddress;
-  console.log(`[${new Date().toISOString()}] Client connected from ${clientIp}`);
-  console.log(`Waiting for messages...`);
 
-  // Send panel configuration with test buttons (including Emoji and Chinese)
-  // Only send if --linkandroid-panel-show flag is present
-  console.log('\n[INFO] Sending panel configuration with buttons...');
-  const panelConfig = {
+const panelConfig = {
     type: 'panel',
     data: {
       buttons: [
@@ -51,11 +44,19 @@ wss.on('connection', (ws, req) => {
         { id: 'volume_up', text: '声音+' },
         { id: 'volume_down', text: '声音-' },
         { id: 'screenshot', text: '截图' },
+        { id: 'follow', text: '□跟随' },
       ]
     }
   };
-  ws.send(JSON.stringify(panelConfig));
-  console.log('[INFO] Panel configuration sent with', panelConfig.data.buttons.length, 'buttons');
+
+wss.on('connection', (ws, req) => {
+  const clientIp = req.socket.remoteAddress;
+  console.log(`[${new Date().toISOString()}] Client connected from ${clientIp}`);
+  console.log(`Waiting for messages...`);
+
+  // Send panel configuration with test buttons (including Emoji and Chinese)
+  // Only send if --linkandroid-panel-show flag is present
+  
 
   // Optional: Send periodic key events for testing (disabled by default)
   // Uncomment the code below to enable automated key event testing
@@ -86,6 +87,20 @@ wss.on('connection', (ws, req) => {
       const event = JSON.parse(message);
       // Log with color coding based on event type
       console.log(`\n[${new Date().toISOString()}] Received Event:${JSON.stringify(event)}`);
+      if(event.type==='ready'){
+        console.log('\n[INFO] Sending panel configuration with buttons...');
+        ws.send(JSON.stringify(panelConfig));
+        console.log('[INFO] Panel configuration sent with', panelConfig.data.buttons.length, 'buttons');
+      }else if(event.type==='panel_button_click'){
+        if('follow'===event.data.id){
+          if(panelConfig.data.buttons[panelConfig.data.buttons.length-1].text==='✓跟随'){
+            panelConfig.data.buttons[panelConfig.data.buttons.length-1].text = '□跟随';
+          }else{
+            panelConfig.data.buttons[panelConfig.data.buttons.length-1].text = '✓跟随';
+          }
+          ws.send(JSON.stringify(panelConfig));
+        }
+      }
     } catch (err) {
       console.error(`[${new Date().toISOString()}] Error parsing message:`, err.message);
       console.error('Raw message:', data.toString());

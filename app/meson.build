@@ -240,6 +240,9 @@ install_man('scrcpy.1')
 install_data('data/icon.png',
              rename: 'scrcpy.png',
              install_dir: datadir / 'icons/hicolor/256x256/apps')
+install_data('data/font.ttf',
+             rename: 'font.ttf',
+             install_dir: datadir / 'scrcpy')
 install_data('data/zsh-completion/_scrcpy',
              install_dir: datadir / 'zsh/site-functions')
 install_data('data/bash-completion/scrcpy',

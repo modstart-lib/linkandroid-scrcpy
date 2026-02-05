@@ -18,6 +18,9 @@
 #include "../../linkandroid/src/json/cJSON.h"
 #include "../../linkandroid/src/websocket_client.h"
 
+// External declaration for WebSocket client
+extern struct la_websocket_client *g_websocket_client;
+
 #define DISPLAY_MARGINS 96
 #define PANEL_WIDTH 50 // Fixed width for right panel in pixels
 #define PANEL_BUTTON_HEIGHT 60
@@ -299,6 +302,15 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect)
 
     // Present the final rendered frame (after all overlays)
     SDL_RenderPresent(screen->display.renderer);
+
+    // LinkAndroid: Send ready event after the first frame is completely rendered and presented
+    if (!screen->ready_event_sent && screen->has_frame && g_websocket_client)
+    {
+        const char *ready_event = "{\"type\":\"ready\"}";
+        la_websocket_client_send(g_websocket_client, ready_event);
+        LOGI("LinkAndroid: Sent ready event to WebSocket server");
+        screen->ready_event_sent = true;
+    }
 }
 
 // Render the right-side panel with buttons
@@ -526,6 +538,7 @@ bool sc_screen_init(struct sc_screen *screen,
     screen->paused = false;
     screen->resume_frame = NULL;
     screen->orientation = SC_ORIENTATION_0;
+    screen->ready_event_sent = false; // LinkAndroid: Initialize ready event flag
 
     screen->video = params->video;
 
@@ -544,40 +557,102 @@ bool sc_screen_init(struct sc_screen *screen,
     }
     else
     {
-        // Try to load a system font that supports Unicode/Emoji
-        // Note: Use regular text fonts for now. Apple Color Emoji.ttc doesn't work
-        // well with TTF_RenderUTF8_Blended (it's a colored font, needs special handling)
-        const char *font_paths[] = {
-            // macOS fonts - use text fonts that have emoji fallback
-            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-            "/System/Library/Fonts/PingFang.ttc",
-            // Alternative: use SF Pro which has better emoji support
-            "/System/Library/Fonts/SFNS.ttf",
-            // Linux fonts
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-            // Windows fonts
-            "C:\\Windows\\Fonts\\seguisym.ttf", // Segoe UI Symbol
-            "C:\\Windows\\Fonts\\arial.ttf",
-            "C:\\Windows\\Fonts\\msyh.ttc",
-            NULL};
-
-        for (int i = 0; font_paths[i] != NULL; i++)
+        // First try environment variable
+        char *env_font_path = getenv("SCRCPY_FONT_PATH");
+        if (env_font_path)
         {
-            screen->panel_font = TTF_OpenFont(font_paths[i], 24); // Increased size to 24 for better readability
+            screen->panel_font = TTF_OpenFont(env_font_path, 24);
             if (screen->panel_font)
             {
-                LOGI("Loaded font: %s", font_paths[i]);
+                LOGI("Loaded custom font from SCRCPY_FONT_PATH: %s", env_font_path);
+            }
+        }
+        
+        if (!screen->panel_font)
+        {
+            // Try to load the custom font from multiple possible locations
+            const char *font_search_paths[] = {
+                NULL, // Will be set to base_path/data/font.ttf
+                "data/font.ttf", // Relative to current directory
+                "../share/scrcpy/font.ttf", // Relative to bin directory (Linux/macOS install)
+                NULL
+            };
+        
+        char *base_path = SDL_GetBasePath();
+        char *base_font_path = NULL;
+        
+        if (base_path)
+        {
+            // Construct path to base_path/data/font.ttf
+            size_t path_len = strlen(base_path) + strlen("data/font.ttf") + 1;
+            base_font_path = malloc(path_len);
+            if (base_font_path)
+            {
+                snprintf(base_font_path, path_len, "%sdata/font.ttf", base_path);
+                font_search_paths[0] = base_font_path;
+            }
+        }
+        
+        // Try each path
+        for (int i = 0; font_search_paths[i] != NULL; i++)
+        {
+            screen->panel_font = TTF_OpenFont(font_search_paths[i], 24);
+            if (screen->panel_font)
+            {
+                LOGI("Loaded custom font: %s", font_search_paths[i]);
                 break;
+            }
+        }
+        
+            // Cleanup
+            if (base_font_path)
+            {
+                free(base_font_path);
+            }
+            if (base_path)
+            {
+                SDL_free(base_path);
+            }
+        }
+
+        // If custom font failed, try system fonts as fallback
+        if (!screen->panel_font)
+        {
+            // Try to load a system font that supports Unicode/Emoji
+            // Note: Use regular text fonts for now. Apple Color Emoji.ttc doesn't work
+            // well with TTF_RenderUTF8_Blended (it's a colored font, needs special handling)
+            const char *font_paths[] = {
+                // macOS fonts - use text fonts that have emoji fallback
+                "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+                "/System/Library/Fonts/Helvetica.ttc",
+                "/System/Library/Fonts/PingFang.ttc",
+                // Alternative: use SF Pro which has better emoji support
+                "/System/Library/Fonts/SFNS.ttf",
+                // Linux fonts
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+                "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+                // Windows fonts
+                "C:\\Windows\\Fonts\\seguisym.ttf", // Segoe UI Symbol
+                "C:\\Windows\\Fonts\\arial.ttf",
+                "C:\\Windows\\Fonts\\msyh.ttc",
+                NULL};
+
+            for (int i = 0; font_paths[i] != NULL; i++)
+            {
+                screen->panel_font = TTF_OpenFont(font_paths[i], 24); // Increased size to 24 for better readability
+                if (screen->panel_font)
+                {
+                    LOGI("Loaded system font: %s", font_paths[i]);
+                    break;
+                }
             }
         }
 
         if (!screen->panel_font)
         {
-            LOGW("Could not load any system font for panel buttons");
+            LOGW("Could not load any font for panel buttons");
         }
     }
 #else

@@ -30,14 +30,24 @@ then
     mkdir "$DIRNAME"
     cd "$DIRNAME"
     
-    "$SOURCES_DIR/$FREETYPE_PROJECT_DIR/configure" \
-        --prefix="$INSTALL_DIR/$DIRNAME" \
-        --enable-static \
-        --disable-shared \
-        --without-harfbuzz \
-        --without-png \
-        --without-bzip2 \
+    conf=(
+        --prefix="$INSTALL_DIR/$DIRNAME"
+        --enable-static
+        --disable-shared
+        --without-harfbuzz
+        --without-png
+        --without-bzip2
         --without-brotli
+    )
+    
+    if [[ "$BUILD_TYPE" == cross ]]
+    then
+        conf+=(
+            --host="$HOST_TRIPLET"
+        )
+    fi
+    
+    "$SOURCES_DIR/$FREETYPE_PROJECT_DIR/configure" "${conf[@]}"
 else
     cd "$DIRNAME"
 fi
@@ -72,17 +82,34 @@ then
     SDL2_DIR="$INSTALL_DIR/$DIRNAME"
     FREETYPE_DIR="$INSTALL_DIR/$DIRNAME"
     
-    cmake "$SOURCES_DIR/SDL2_ttf-$SDL2_TTF_VERSION" \
-        -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR/$DIRNAME" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_SHARED_LIBS=OFF \
-        -DSDL2TTF_HARFBUZZ=OFF \
-        -DSDL2TTF_FREETYPE=ON \
-        -DSDL2TTF_VENDORED=OFF \
-        -DSDL2TTF_SAMPLES=OFF \
-        -DCMAKE_PREFIX_PATH="$SDL2_DIR;$FREETYPE_DIR" \
-        -DFREETYPE_LIBRARY="$FREETYPE_DIR/lib/libfreetype.a" \
+    CMAKE_OPTS=(
+        -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR/$DIRNAME"
+        -DCMAKE_BUILD_TYPE=Release
+        -DBUILD_SHARED_LIBS=OFF
+        -DSDL2TTF_HARFBUZZ=OFF
+        -DSDL2TTF_FREETYPE=ON
+        -DSDL2TTF_VENDORED=OFF
+        -DSDL2TTF_SAMPLES=OFF
+        -DCMAKE_PREFIX_PATH="$SDL2_DIR;$FREETYPE_DIR"
+        -DFREETYPE_LIBRARY="$FREETYPE_DIR/lib/libfreetype.a"
         -DFREETYPE_INCLUDE_DIRS="$FREETYPE_DIR/include/freetype2"
+    )
+    
+    if [[ "$BUILD_TYPE" == cross ]]
+    then
+        CMAKE_OPTS+=(
+            -DCMAKE_SYSTEM_NAME=Windows
+            -DCMAKE_C_COMPILER=${HOST_TRIPLET}-gcc
+            -DCMAKE_CXX_COMPILER=${HOST_TRIPLET}-g++
+            -DCMAKE_RC_COMPILER=${HOST_TRIPLET}-windres
+            -DCMAKE_FIND_ROOT_PATH="$INSTALL_DIR/$DIRNAME"
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
+        )
+    fi
+    
+    cmake "$SOURCES_DIR/SDL2_ttf-$SDL2_TTF_VERSION" "${CMAKE_OPTS[@]}"
 else
     cd "$DIRNAME"
 fi

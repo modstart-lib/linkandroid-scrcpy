@@ -22,6 +22,7 @@ WINXX_BUILD_DIR="$WORK_DIR/build-$WINXX"
 
 app/deps/adb_windows.sh
 app/deps/sdl.sh $WINXX cross static
+app/deps/sdl_ttf.sh $WINXX cross static
 app/deps/dav1d.sh $WINXX cross static
 app/deps/ffmpeg.sh $WINXX cross static
 app/deps/libusb.sh $WINXX cross static

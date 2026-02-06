@@ -108,6 +108,9 @@ struct sc_screen
     SDL_Cursor *arrow_cursor; // Default arrow cursor
     bool cursor_is_hand;      // Track current cursor state
 
+    // Track if mouse button is pressed outside panel (to send release event when entering panel)
+    bool mouse_button_pressed_outside_panel;
+
     // LinkAndroid: Track if ready event has been sent to WebSocket server
     bool ready_event_sent;
 };
@@ -165,6 +168,12 @@ void sc_screen_destroy(struct sc_screen *screen);
 // It is used to hide the window immediately on closing without waiting for
 // screen_destroy()
 void sc_screen_hide_window(struct sc_screen *screen);
+
+// raise the window to the front (activate it)
+void sc_screen_raise_window(struct sc_screen *screen);
+
+// set window always on top
+void sc_screen_set_always_on_top(struct sc_screen *screen, bool enable);
 
 // toggle the fullscreen mode
 void sc_screen_toggle_fullscreen(struct sc_screen *screen);

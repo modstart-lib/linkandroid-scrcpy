@@ -25,6 +25,8 @@ extern struct la_websocket_client *g_websocket_client;
 #define PANEL_WIDTH 50 // Fixed width for right panel in pixels
 #define PANEL_BUTTON_HEIGHT 60
 #define PANEL_START_Y 10
+#define PANEL_BUTTON_MARGIN 10
+#define PANEL_FONT_SIZE 24
 
 #define DOWNCAST(SINK) container_of(SINK, struct sc_screen, frame_sink)
 
@@ -344,7 +346,7 @@ sc_screen_render_panel(struct sc_screen *screen)
     SDL_RenderFillRect(renderer, &panel_rect);
 
     // Button layout
-    int button_margin = 10;
+    int button_margin = PANEL_BUTTON_MARGIN;
     int button_height = PANEL_BUTTON_HEIGHT;
     int button_width = panel_w - 2 * button_margin;
     int start_y = PANEL_START_Y;
@@ -561,7 +563,7 @@ bool sc_screen_init(struct sc_screen *screen,
         char *env_font_path = getenv("SCRCPY_FONT_PATH");
         if (env_font_path)
         {
-            screen->panel_font = TTF_OpenFont(env_font_path, 24);
+            screen->panel_font = TTF_OpenFont(env_font_path, PANEL_FONT_SIZE);
             if (screen->panel_font)
             {
                 LOGI("Loaded custom font from SCRCPY_FONT_PATH: %s", env_font_path);
@@ -596,7 +598,7 @@ bool sc_screen_init(struct sc_screen *screen,
         // Try each path
         for (int i = 0; font_search_paths[i] != NULL; i++)
         {
-            screen->panel_font = TTF_OpenFont(font_search_paths[i], 24);
+            screen->panel_font = TTF_OpenFont(font_search_paths[i], PANEL_FONT_SIZE);
             if (screen->panel_font)
             {
                 LOGI("Loaded custom font: %s", font_search_paths[i]);
@@ -641,7 +643,7 @@ bool sc_screen_init(struct sc_screen *screen,
 
             for (int i = 0; font_paths[i] != NULL; i++)
             {
-                screen->panel_font = TTF_OpenFont(font_paths[i], 24); // Increased size to 24 for better readability
+                screen->panel_font = TTF_OpenFont(font_paths[i], PANEL_FONT_SIZE);
                 if (screen->panel_font)
                 {
                     LOGI("Loaded system font: %s", font_paths[i]);
@@ -663,6 +665,7 @@ bool sc_screen_init(struct sc_screen *screen,
     screen->hand_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
     screen->arrow_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
     screen->cursor_is_hand = false;
+    screen->mouse_button_pressed_outside_panel = false;
 
     if (!screen->hand_cursor || !screen->arrow_cursor)
     {
@@ -888,6 +891,31 @@ sc_screen_show_initial_window(struct sc_screen *screen)
 void sc_screen_hide_window(struct sc_screen *screen)
 {
     SDL_HideWindow(screen->window);
+}
+
+void sc_screen_raise_window(struct sc_screen *screen)
+{
+    if (!screen->window) {
+        LOGW("Cannot raise window: window not initialized");
+        return;
+    }
+    SDL_RaiseWindow(screen->window);
+    LOGI("Window raised to front");
+}
+
+void sc_screen_set_always_on_top(struct sc_screen *screen, bool enable)
+{
+    if (!screen->window) {
+        LOGW("Cannot set always-on-top: window not initialized");
+        return;
+    }
+#if SDL_VERSION_ATLEAST(2, 0, 16)
+    SDL_SetWindowAlwaysOnTop(screen->window, enable ? SDL_TRUE : SDL_FALSE);
+    LOGI("Window always-on-top: %s", enable ? "enabled" : "disabled");
+#else
+    (void) enable;
+    LOGW("SDL_SetWindowAlwaysOnTop requires SDL >= 2.0.16");
+#endif
 }
 
 void sc_screen_interrupt(struct sc_screen *screen)
@@ -1357,8 +1385,8 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         }
     }
 
-    // Check if the event is a panel button click
-    if (event->type == SDL_MOUSEBUTTONDOWN &&
+    // Check if the event is a panel button click or any mouse event in panel area
+    if ((event->type == SDL_MOUSEBUTTONDOWN || event->type == SDL_MOUSEBUTTONUP) &&
         screen->panel.visible &&
         screen->panel.button_count > 0)
     {
@@ -1372,28 +1400,99 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         int panel_x = screen->rect.x + screen->rect.w;
         int panel_w = sc_screen_get_panel_width_scaled(screen);
 
+        bool in_panel = x >= panel_x && x < panel_x + panel_w;
+
+        if (event->type == SDL_MOUSEBUTTONDOWN)
+        {
+            if (in_panel)
+            {
+                // Mouse down in panel area - check which button was clicked
+                int button_margin = 10;
+                int button_height = PANEL_BUTTON_HEIGHT;
+                int button_width = panel_w - 2 * button_margin;
+                int start_y = PANEL_START_Y;
+
+                for (int i = 0; i < screen->panel.button_count; i++)
+                {
+                    int btn_x = panel_x + button_margin;
+                    int btn_y = start_y + i * (button_height + button_margin);
+
+                    if (x >= btn_x && x < btn_x + button_width &&
+                        y >= btn_y && y < btn_y + button_height)
+                    {
+                        // Button clicked!
+                        sc_screen_send_panel_click(screen, screen->panel.buttons[i].id);
+                        return true; // Consume the event
+                    }
+                }
+                // Mouse down in panel area (not on button), consume the event
+                return true;
+            }
+            else
+            {
+                // Mouse down outside panel area, track this
+                screen->mouse_button_pressed_outside_panel = true;
+            }
+        }
+        else // SDL_MOUSEBUTTONUP
+        {
+            if (in_panel)
+            {
+                // SDL_MOUSEBUTTONUP in panel area
+                // We need to let the input_manager handle this event first to ensure
+                // proper button state cleanup (especially if the button was pressed
+                // in the video area and released in the panel area).
+                // After input_manager processes it, we'll consume the event.
+                sc_input_manager_handle_event(&screen->im, event);
+                screen->mouse_button_pressed_outside_panel = false;
+                return true; // Consume the event after processing
+            }
+            else
+            {
+                // Mouse up outside panel area
+                screen->mouse_button_pressed_outside_panel = false;
+            }
+        }
+    }
+
+    // Also filter out mouse motion events in panel area
+    if (event->type == SDL_MOUSEMOTION &&
+        screen->panel.visible)
+    {
+        // Get mouse position in drawable coordinates
+        int32_t x = event->motion.x;
+        int32_t y = event->motion.y;
+        sc_screen_hidpi_scale_coords(screen, &x, &y);
+
+        // Check if motion is in panel area (right of video rect)
+        int panel_x = screen->rect.x + screen->rect.w;
+        int panel_w = sc_screen_get_panel_width_scaled(screen);
+
         if (x >= panel_x && x < panel_x + panel_w)
         {
-            // Click is in panel, check which button
-            int button_margin = 10;
-            int button_height = PANEL_BUTTON_HEIGHT;
-            int button_width = panel_w - 2 * button_margin;
-            int start_y = PANEL_START_Y;
-
-            for (int i = 0; i < screen->panel.button_count; i++)
+            // Mouse entered panel area while button was pressed outside
+            // Send a button release event to complete the gesture on the device
+            if (screen->mouse_button_pressed_outside_panel)
             {
-                int btn_x = panel_x + button_margin;
-                int btn_y = start_y + i * (button_height + button_margin);
-
-                if (x >= btn_x && x < btn_x + button_width &&
-                    y >= btn_y && y < btn_y + button_height)
-                {
-                    // Button clicked!
-                    sc_screen_send_panel_click(screen, screen->panel.buttons[i].id);
-                    return true; // Consume the event
-                }
+                // Create a synthetic MOUSEBUTTONUP event
+                SDL_Event release_event = *event;
+                release_event.type = SDL_MOUSEBUTTONUP;
+                release_event.button.state = SDL_RELEASED;
+                release_event.button.button = SDL_BUTTON_LEFT;
+                release_event.button.clicks = 1;
+                
+                // Send the release event to input_manager
+                sc_input_manager_handle_event(&screen->im, &release_event);
+                
+                // Clear the tracking flag
+                screen->mouse_button_pressed_outside_panel = false;
+                
+                LOGD("Sent synthetic mouse release event when entering panel area");
             }
-            // Click was in panel but not on a button, still consume it
+            
+            // Mouse motion in panel area, don't send to device
+            // (but don't consume - let cursor handling work)
+            // Actually, we should consume it to prevent touch_move events
             return true;
         }
     }

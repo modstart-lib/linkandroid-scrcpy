@@ -11,6 +11,7 @@
 #include "screen.h"
 #include "shortcut_mod.h"
 #include "util/log.h"
+#include "events.h"
 
 // LinkAndroid: WebSocket event forwarding
 #include "../../linkandroid/src/websocket_client.h"
@@ -23,6 +24,27 @@ uint16_t g_device_height = 0;
 
 static struct sc_input_manager *g_input_manager = NULL;
 
+// Task data for window operations that must run on main thread
+struct window_top_task_data {
+    struct sc_screen *screen;
+    bool enable;
+};
+
+// Task to raise window on main thread
+static void
+task_raise_window(void *userdata) {
+    struct sc_screen *screen = userdata;
+    sc_screen_raise_window(screen);
+}
+
+// Task to set always-on-top on main thread
+static void
+task_set_always_on_top(void *userdata) {
+    struct window_top_task_data *data = userdata;
+    sc_screen_set_always_on_top(data->screen, data->enable);
+    free(data);
+}
+
 static void
 on_websocket_message(const char *json, void *userdata) {
     (void) userdata;
@@ -30,16 +52,76 @@ on_websocket_message(const char *json, void *userdata) {
         LOGW("WebSocket message received but input manager or screen not ready");
         return;
     }
-
+    
     // First, try to parse as panel configuration
     cJSON *root = cJSON_Parse(json);
     if (root) {
         cJSON *type_item = cJSON_GetObjectItemCaseSensitive(root, "type");
-        if (cJSON_IsString(type_item) && strcmp(type_item->valuestring, "panel") == 0) {
+        if (cJSON_IsString(type_item)) {
+            LOGD("WebSocket message type: %s", type_item->valuestring);
+            
+            // Check for quit command
+            if (strcmp(type_item->valuestring, "quit") == 0) {
+                LOGI("WebSocket quit command received, requesting application exit");
+                // Push SDL_QUIT event to trigger graceful shutdown
+                SDL_Event quit_event;
+                quit_event.type = SDL_QUIT;
+                SDL_PushEvent(&quit_event);
+                cJSON_Delete(root);
+                return;
+            }
+            
+            // Check for active command
+            if (strcmp(type_item->valuestring, "active") == 0) {
+                LOGI("WebSocket active command received, raising window to front");
+                bool ok = sc_post_to_main_thread(task_raise_window, g_input_manager->screen);
+                if (!ok) {
+                    LOGW("Could not post raise window task to main thread");
+                }
+                cJSON_Delete(root);
+                return;
+            }
+            
+            // Check for top command
+            if (strcmp(type_item->valuestring, "top") == 0) {
+                cJSON *data = cJSON_GetObjectItemCaseSensitive(root, "data");
+                if (data) {
+                    cJSON *enable = cJSON_GetObjectItemCaseSensitive(data, "enable");
+                    if (cJSON_IsBool(enable)) {
+                        bool enable_top = cJSON_IsTrue(enable);
+                        LOGI("WebSocket top command received, setting always-on-top: %s", 
+                             enable_top ? "enabled" : "disabled");
+                        
+                        // Allocate task data
+                        struct window_top_task_data *task_data = malloc(sizeof(*task_data));
+                        if (task_data) {
+                            task_data->screen = g_input_manager->screen;
+                            task_data->enable = enable_top;
+                            bool ok = sc_post_to_main_thread(task_set_always_on_top, task_data);
+                            if (!ok) {
+                                LOGW("Could not post always-on-top task to main thread");
+                                free(task_data);
+                            }
+                        } else {
+                            LOGE("Failed to allocate task data for always-on-top");
+                        }
+                    } else {
+                        LOGW("WebSocket top command missing 'enable' boolean parameter");
+                    }
+                } else {
+                    LOGW("WebSocket top command missing 'data' object");
+                }
+                cJSON_Delete(root);
+                return;
+            }
+            
             // Handle panel configuration
-            sc_screen_update_panel(g_input_manager->screen, json);
-            cJSON_Delete(root);
-            return;
+            if (strcmp(type_item->valuestring, "panel") == 0) {
+                LOGD("Handling panel configuration");
+                sc_screen_update_panel(g_input_manager->screen, json);
+                cJSON_Delete(root);
+                return;
+            }
         }
         cJSON_Delete(root);
     }
@@ -49,7 +131,7 @@ on_websocket_message(const char *json, void *userdata) {
         LOGW("WebSocket control message received but controller not ready");
         return;
     }
-
+    
     struct sc_control_msg msg;
     // msg must be initialized, specifically pointer fields, to avoid double free on error
     memset(&msg, 0, sizeof(msg));

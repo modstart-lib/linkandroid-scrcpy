@@ -34,9 +34,29 @@ public final class PositionMapper {
     public Point map(Position position) {
         Size clientVideoSize = position.getScreenSize();
         if (!videoSize.equals(clientVideoSize)) {
-            // The client sends a click relative to a video with wrong dimensions,
-            // the device may have been rotated since the event was generated, so ignore the event
-            return null;
+            // The client sends a click relative to a video with wrong dimensions
+            // Instead of ignoring, scale the coordinates to match current video size
+            Point originalPoint = position.getPoint();
+            
+            float scaleX = (float) videoSize.getWidth() / clientVideoSize.getWidth();
+            float scaleY = (float) videoSize.getHeight() / clientVideoSize.getHeight();
+            
+            int scaledX = Math.round(originalPoint.getX() * scaleX);
+            int scaledY = Math.round(originalPoint.getY() * scaleY);
+            
+            if (com.genymobile.scrcpy.util.Ln.isEnabled(com.genymobile.scrcpy.util.Ln.Level.VERBOSE)) {
+                com.genymobile.scrcpy.util.Ln.v("PositionMapper: scaled " + clientVideoSize + " -> " + videoSize + 
+                                               " point(" + originalPoint.getX() + "," + originalPoint.getY() + ")" +
+                                               " -> (" + scaledX + "," + scaledY + ")");
+            }
+            
+            Point scaledPoint = new Point(scaledX, scaledY);
+            
+            if (videoToDeviceMatrix != null) {
+                scaledPoint = videoToDeviceMatrix.apply(scaledPoint);
+            }
+            
+            return scaledPoint;
         }
 
         Point point = position.getPoint();

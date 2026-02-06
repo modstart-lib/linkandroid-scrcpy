@@ -12,6 +12,7 @@
 #include "json/cJSON.h"
 #include "../../app/src/control_msg.h"
 #include "../../app/src/util/log.h"
+#include "../../app/src/options.h"
 
 #define MAX_PAYLOAD_SIZE (2 * 1024 * 1024) // 2MB for preview images
 #define RECONNECT_DELAY_MS 3000

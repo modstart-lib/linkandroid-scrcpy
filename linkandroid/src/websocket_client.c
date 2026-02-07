@@ -827,9 +827,12 @@ void la_websocket_client_destroy(struct la_websocket_client *client)
         lws_cancel_service(client->context);
     }
 
+    // Wait for thread to finish and clean up its resources
+    // The thread will destroy the context before exiting
     if (client->thread_started)
     {
         pthread_join(client->thread, NULL);
+        client->thread_started = false;
     }
 
     // Clear output queue

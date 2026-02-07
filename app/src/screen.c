@@ -329,11 +329,18 @@ sc_screen_render_panel(struct sc_screen *screen)
     // LOGI("Rendering panel: buttons=%d, visible=%d, font=%p",
     //      screen->panel.button_count, screen->panel.visible, screen->panel_font);
 
-    int dw, dh;
+    int ww, wh, dw, dh;
+    SDL_GetWindowSize(screen->window, &ww, &wh);
     SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
+    
+    // Calculate HiDPI scale factor
+    float hidpi_scale = (float)dw / ww;
 
-    // Get HiDPI-scaled panel width
+    // Get HiDPI-scaled panel dimensions
     int panel_w = sc_screen_get_panel_width_scaled(screen);
+    int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
+    int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
+    int start_y = (int)(PANEL_START_Y * hidpi_scale);
 
     // Calculate panel position (right side of video rect)
     int panel_x = screen->rect.x + screen->rect.w;
@@ -346,10 +353,7 @@ sc_screen_render_panel(struct sc_screen *screen)
     SDL_RenderFillRect(renderer, &panel_rect);
 
     // Button layout
-    int button_margin = PANEL_BUTTON_MARGIN;
-    int button_height = PANEL_BUTTON_HEIGHT;
     int button_width = panel_w - 2 * button_margin;
-    int start_y = PANEL_START_Y;
 
     for (int i = 0; i < screen->panel.button_count; i++)
     {
@@ -864,8 +868,8 @@ sc_screen_show_initial_window(struct sc_screen *screen)
         get_initial_optimal_size(screen->content_size, screen->req.width,
                                  screen->req.height);
 
-    // Add fixed 200px panel width to window size if panel is visible
-    // The panel should NOT be scaled - always 200 logical pixels
+    // Add panel width to window size if panel is visible
+    // The panel width is in logical pixels (not HiDPI scaled)
     if (screen->panel.visible)
     {
         window_size.width += PANEL_WIDTH;
@@ -1345,6 +1349,12 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         int32_t y = event->motion.y;
         sc_screen_hidpi_scale_coords(screen, &x, &y);
 
+        // Get HiDPI scale factor for button dimensions
+        int ww, wh, dw, dh;
+        SDL_GetWindowSize(screen->window, &ww, &wh);
+        SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
+        float hidpi_scale = (float)dw / ww;
+
         // Check if mouse is over panel area
         int panel_x = screen->rect.x + screen->rect.w;
         int panel_w = sc_screen_get_panel_width_scaled(screen);
@@ -1353,10 +1363,10 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         if (x >= panel_x && x < panel_x + panel_w)
         {
             // Mouse is in panel, check if over a button
-            int button_margin = 10;
-            int button_height = PANEL_BUTTON_HEIGHT;
+            int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
+            int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
             int button_width = panel_w - 2 * button_margin;
-            int start_y = PANEL_START_Y;
+            int start_y = (int)(PANEL_START_Y * hidpi_scale);
 
             for (int i = 0; i < screen->panel.button_count; i++)
             {
@@ -1396,6 +1406,12 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         int32_t y = event->button.y;
         sc_screen_hidpi_scale_coords(screen, &x, &y);
 
+        // Get HiDPI scale factor for button dimensions
+        int ww, wh, dw, dh;
+        SDL_GetWindowSize(screen->window, &ww, &wh);
+        SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
+        float hidpi_scale = (float)dw / ww;
+
         // Check if click is in panel area (right of video rect)
         int panel_x = screen->rect.x + screen->rect.w;
         int panel_w = sc_screen_get_panel_width_scaled(screen);
@@ -1407,10 +1423,10 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
             if (in_panel)
             {
                 // Mouse down in panel area - check which button was clicked
-                int button_margin = 10;
-                int button_height = PANEL_BUTTON_HEIGHT;
+                int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
+                int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
                 int button_width = panel_w - 2 * button_margin;
-                int start_y = PANEL_START_Y;
+                int start_y = (int)(PANEL_START_Y * hidpi_scale);
 
                 for (int i = 0; i < screen->panel.button_count; i++)
                 {

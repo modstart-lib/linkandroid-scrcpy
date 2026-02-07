@@ -539,14 +539,17 @@ void la_preview_sender_destroy(struct la_preview_sender *sender)
         return;
     }
 
+    // Signal thread to stop
     if (sender->running)
     {
         sender->running = false;
     }
 
+    // Wait for thread to finish
     if (sender->thread_started)
     {
         pthread_join(sender->thread, NULL);
+        sender->thread_started = false;
     }
 
     LOGI("LinkAndroid preview sender destroyed");

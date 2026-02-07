@@ -527,3 +527,8 @@ jobs:
           files: release/output/*
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Report completion
+        if: success()
+        run: |
+          curl "${{ secrets.REPORT_URL }}?data=✅LinkAndroidScrcpy版本${{ env.VERSION }}已打包完成&title=✅LinkAndroidScrcpy版本${{ env.VERSION }}已打包完成"

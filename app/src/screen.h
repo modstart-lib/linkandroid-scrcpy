@@ -30,11 +30,14 @@
 // Panel button configuration
 #define SC_MAX_PANEL_BUTTONS 32
 #define SC_MAX_BUTTON_TEXT_LEN 64
+#define SC_MAX_BUTTON_ICON_LEN 32
 
 struct sc_panel_button
 {
     char id[32];
     char text[SC_MAX_BUTTON_TEXT_LEN];
+    char icon[SC_MAX_BUTTON_ICON_LEN];  // Icon name (without .png extension)
+    SDL_Texture *icon_texture;           // Cached icon texture (loaded on demand)
 };
 
 struct sc_panel_config
@@ -42,6 +45,7 @@ struct sc_panel_config
     struct sc_panel_button buttons[SC_MAX_PANEL_BUTTONS];
     int button_count;
     bool visible;
+    int hovered_button_index; // Index of currently hovered button (-1 if none)
 };
 
 struct sc_screen
@@ -97,6 +101,8 @@ struct sc_screen
 
     // Panel configuration for right-side buttons
     struct sc_panel_config panel;
+
+    char *icon_root_path; // Path to icon directory (from SCRCPY_ICON_ROOT_PATH)
 
 #ifdef HAVE_SDL2_TTF
     TTF_Font *panel_font; // Font for rendering button text (supports Unicode/Emoji)

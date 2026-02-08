@@ -10,3 +10,4 @@ local.properties
 /scrcpy-server
 .DS_Store
 node_modules
+server/scrcpy-server-debug

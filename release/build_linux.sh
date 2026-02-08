@@ -15,6 +15,7 @@ LINUX_BUILD_DIR="$WORK_DIR/build-linux-$ARCH"
 
 app/deps/adb_linux.sh
 app/deps/sdl.sh linux native static
+app/deps/sdl_image.sh linux native static
 app/deps/sdl_ttf.sh linux native static
 app/deps/dav1d.sh linux native static
 app/deps/ffmpeg.sh linux native static
@@ -43,4 +44,10 @@ cp "$LINUX_BUILD_DIR"/app/scrcpy "$LINUX_BUILD_DIR/dist/"
 cp app/data/icon.png "$LINUX_BUILD_DIR/dist/"
 cp app/data/font.ttf "$LINUX_BUILD_DIR/dist/"
 cp app/scrcpy.1 "$LINUX_BUILD_DIR/dist/"
+# Copy panel button icons
+for icon in back.png follow.png follow_active.png home.png quit.png screenshot.png task.png top.png top_active.png v-minus.png v-plus.png; do
+    if [ -f "app/data/$icon" ]; then
+        cp "app/data/$icon" "$LINUX_BUILD_DIR/dist/"
+    fi
+done
 cp -r "$ADB_INSTALL_DIR"/. "$LINUX_BUILD_DIR/dist/"

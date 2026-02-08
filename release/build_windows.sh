@@ -22,6 +22,7 @@ WINXX_BUILD_DIR="$WORK_DIR/build-$WINXX"
 
 app/deps/adb_windows.sh
 app/deps/sdl.sh $WINXX cross static
+app/deps/sdl_image.sh $WINXX cross static
 app/deps/sdl_ttf.sh $WINXX cross static
 app/deps/dav1d.sh $WINXX cross static
 app/deps/ffmpeg.sh $WINXX cross static
@@ -53,6 +54,12 @@ cp app/data/scrcpy-noconsole.vbs "$WINXX_BUILD_DIR/dist/"
 cp app/data/icon.png "$WINXX_BUILD_DIR/dist/"
 cp app/data/font.ttf "$WINXX_BUILD_DIR/dist/"
 cp app/data/open_a_terminal_here.bat "$WINXX_BUILD_DIR/dist/"
+# Copy panel button icons
+for icon in back.png follow.png follow_active.png home.png quit.png screenshot.png task.png top.png top_active.png v-minus.png v-plus.png; do
+    if [ -f "app/data/$icon" ]; then
+        cp "app/data/$icon" "$WINXX_BUILD_DIR/dist/"
+    fi
+done
 # Copy DLL files if they exist (they won't exist for static builds)
 if ls "$DEPS_INSTALL_DIR"/bin/*.dll 1> /dev/null 2>&1; then
     cp "$DEPS_INSTALL_DIR"/bin/*.dll "$WINXX_BUILD_DIR/dist/"

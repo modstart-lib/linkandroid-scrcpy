@@ -21,6 +21,7 @@ then
 fi
 
 SCRCPY_ICON_PATH="app/data/icon.png" \
+SCRCPY_ICON_ROOT_PATH="app/data" \
 SCRCPY_FONT_PATH="app/data/font.ttf" \
 SCRCPY_SERVER_PATH="$BUILDDIR/server/scrcpy-server" \
 "$BUILDDIR/app/scrcpy" "$@"

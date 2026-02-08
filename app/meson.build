@@ -162,6 +162,15 @@ else
     warning('SDL2_ttf not found, panel button rendering will be limited')
 endif
 
+# Try to find SDL2_image (optional for panel button icon rendering)
+sdl2_image_dep = dependency('SDL2_image', required: false, static: static)
+if sdl2_image_dep.found()
+    dependencies += sdl2_image_dep
+    conf.set('HAVE_SDL2_IMAGE', true)
+else
+    warning('SDL2_image not found, panel button icon rendering will be disabled')
+endif
+
 if v4l2_support
     dependencies += dependency('libavdevice', static: static)
 endif

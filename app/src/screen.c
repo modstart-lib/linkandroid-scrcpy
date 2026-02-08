@@ -4,6 +4,10 @@
 #include <string.h>
 #include <SDL2/SDL.h>
 
+#ifdef HAVE_SDL2_IMAGE
+#include <SDL2/SDL_image.h>
+#endif
+
 #ifdef HAVE_SDL2_TTF
 #include <SDL2/SDL_ttf.h>
 #endif
@@ -22,7 +26,7 @@
 extern struct la_websocket_client *g_websocket_client;
 
 #define DISPLAY_MARGINS 96
-#define PANEL_WIDTH 70
+#define PANEL_WIDTH 60
 #define PANEL_BUTTON_HEIGHT 30
 #define PANEL_START_Y 10
 #define PANEL_BUTTON_MARGIN 10
@@ -315,6 +319,71 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect)
     }
 }
 
+#ifdef HAVE_SDL2_IMAGE
+// Load icon for a panel button (on demand, cached in button struct)
+static bool
+sc_screen_load_button_icon(struct sc_screen *screen, struct sc_panel_button *button)
+{
+    // If already loaded, return success
+    if (button->icon_texture)
+    {
+        return true;
+    }
+    
+    // No icon name specified
+    if (button->icon[0] == '\0')
+    {
+        return false;
+    }
+    
+    // No icon root path available
+    if (!screen->icon_root_path)
+    {
+        return false;
+    }
+    
+    // Construct full icon path: <icon_root>/<icon_name>.png
+    size_t path_len = strlen(screen->icon_root_path) + strlen(button->icon) + strlen("/.png") + 1;
+    char *icon_path = malloc(path_len);
+    if (!icon_path)
+    {
+        LOG_OOM();
+        return false;
+    }
+    snprintf(icon_path, path_len, "%s/%s.png", screen->icon_root_path, button->icon);
+    
+    // Load image using SDL_image
+    SDL_Surface *surface = IMG_Load(icon_path);
+    free(icon_path);
+    
+    if (!surface)
+    {
+        LOGW("Failed to load icon '%s.png': %s", button->icon, IMG_GetError());
+        return false;
+    }
+    
+    // Create texture from surface
+    SDL_Renderer *renderer = screen->display.renderer;
+    if (!renderer)
+    {
+        SDL_FreeSurface(surface);
+        return false;
+    }
+    
+    button->icon_texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FreeSurface(surface);
+    
+    if (!button->icon_texture)
+    {
+        LOGW("Failed to create texture for icon '%s.png': %s", button->icon, SDL_GetError());
+        return false;
+    }
+    
+    LOGD("Loaded icon for button '%s': %s.png", button->id, button->icon);
+    return true;
+}
+#endif // HAVE_SDL2_IMAGE
+
 // Render the right-side panel with buttons
 static void
 sc_screen_render_panel(struct sc_screen *screen)
@@ -363,17 +432,54 @@ sc_screen_render_panel(struct sc_screen *screen)
         // Draw button background (rounded rectangle)
         // For simplicity, draw a regular rectangle first
         // TODO: Add rounded corners using OpenGL shader
-        SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255); // Button bg #3C3C3C
+        // Use different color if button is hovered
+        bool is_hovered = (i == screen->panel.hovered_button_index);
+        if (is_hovered) {
+            SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255); // Lighter bg on hover #505050
+        } else {
+            SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255); // Normal bg #3C3C3C
+        }
         SDL_Rect button_rect = {btn_x, btn_y, button_width, button_height};
         SDL_RenderFillRect(renderer, &button_rect);
 
-        // Draw button border
-        SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255); // Border #505050
-        SDL_RenderDrawRect(renderer, &button_rect);
-
+        // Render button content: icon or text (icon takes precedence)
+        bool rendered = false;
+        
+#ifdef HAVE_SDL2_IMAGE
+        // Try to render icon if specified
+        if (screen->panel.buttons[i].icon[0] != '\0')
+        {
+            // Load icon on demand (cached after first load)
+            if (sc_screen_load_button_icon(screen, &screen->panel.buttons[i]))
+            {
+                SDL_Texture *icon_texture = screen->panel.buttons[i].icon_texture;
+                if (icon_texture)
+                {
+                    // Get icon dimensions
+                    int icon_w, icon_h;
+                    SDL_QueryTexture(icon_texture, NULL, NULL, &icon_w, &icon_h);
+                    
+                    // Scale icon to fit button (same size as font height)
+                    int target_size = button_height - 10 * (int)hidpi_scale; // Leave some margin
+                    float scale = (float)target_size / (icon_w > icon_h ? icon_w : icon_h);
+                    int scaled_w = (int)(icon_w * scale);
+                    int scaled_h = (int)(icon_h * scale);
+                    
+                    // Center icon in button
+                    int icon_x = btn_x + (button_width - scaled_w) / 2;
+                    int icon_y = btn_y + (button_height - scaled_h) / 2;
+                    
+                    SDL_Rect icon_rect = {icon_x, icon_y, scaled_w, scaled_h};
+                    SDL_RenderCopy(renderer, icon_texture, NULL, &icon_rect);
+                    rendered = true;
+                }
+            }
+        }
+#endif // HAVE_SDL2_IMAGE
+        
+        // If icon not rendered, try to render text
 #ifdef HAVE_SDL2_TTF
-        // Render button text
-        if (screen->panel_font && screen->panel.buttons[i].text[0] != '\0')
+        if (!rendered && screen->panel_font && screen->panel.buttons[i].text[0] != '\0')
         {
             SDL_Color text_color = {255, 255, 255, 255}; // White text
             SDL_Surface *text_surface = TTF_RenderUTF8_Blended(
@@ -395,14 +501,13 @@ sc_screen_render_panel(struct sc_screen *screen)
                     SDL_Rect text_rect = {text_x, text_y, text_w, text_h};
                     SDL_RenderCopy(renderer, text_texture, NULL, &text_rect);
                     SDL_DestroyTexture(text_texture);
+                    rendered = true;
                 }
                 SDL_FreeSurface(text_surface);
             }
         }
 #else
         // Without SDL2_ttf, just show button ID as fallback
-        // This is a simple placeholder; in production you might want to
-        // implement a basic bitmap font or use another text rendering method
         (void)screen->panel.buttons[i].text; // Suppress unused warning
 #endif
     }
@@ -552,6 +657,7 @@ bool sc_screen_init(struct sc_screen *screen,
     screen->panel.button_count = 0;
     // Set panel visibility based on startup parameter
     screen->panel.visible = params->panel_show;
+    screen->panel.hovered_button_index = -1; // No button hovered initially
     memset(screen->panel.buttons, 0, sizeof(screen->panel.buttons));
     screen->panel_font = NULL;
 
@@ -791,6 +897,81 @@ bool sc_screen_init(struct sc_screen *screen,
     }
 #endif
 
+    // Initialize icon root path for panel buttons
+    screen->icon_root_path = NULL;
+    char *env_icon_root = getenv("SCRCPY_ICON_ROOT_PATH");
+    if (env_icon_root)
+    {
+        screen->icon_root_path = strdup(env_icon_root);
+        if (screen->icon_root_path)
+        {
+            LOGI("Icon root path set from SCRCPY_ICON_ROOT_PATH: %s", screen->icon_root_path);
+        }
+    }
+    
+    if (!screen->icon_root_path)
+    {
+        // Try default paths
+        const char *icon_search_paths[] = {
+            NULL, // Will be set to base_path/data
+            "app/data", // Relative to current directory
+            "../share/scrcpy", // Relative to bin directory (Linux/macOS install)
+            NULL
+        };
+    
+        char *base_path = SDL_GetBasePath();
+        char *base_icon_path = NULL;
+    
+        if (base_path)
+        {
+            size_t path_len = strlen(base_path) + strlen("data") + 1;
+            base_icon_path = malloc(path_len);
+            if (base_icon_path)
+            {
+                snprintf(base_icon_path, path_len, "%sdata", base_path);
+                icon_search_paths[0] = base_icon_path;
+            }
+        }
+    
+        // Try each path
+        for (int i = 0; icon_search_paths[i] != NULL; i++)
+        {
+            // Check if path exists by trying to construct a test file path
+            size_t test_path_len = strlen(icon_search_paths[i]) + strlen("/home.png") + 1;
+            char *test_path = malloc(test_path_len);
+            if (test_path)
+            {
+                snprintf(test_path, test_path_len, "%s/home.png", icon_search_paths[i]);
+                FILE *f = fopen(test_path, "rb");
+                free(test_path);
+                if (f)
+                {
+                    fclose(f);
+                    screen->icon_root_path = strdup(icon_search_paths[i]);
+                    if (screen->icon_root_path)
+                    {
+                        LOGI("Found icon root path: %s", screen->icon_root_path);
+                        break;
+                    }
+                }
+            }
+        }
+    
+        if (base_icon_path)
+        {
+            free(base_icon_path);
+        }
+        if (base_path)
+        {
+            SDL_free(base_path);
+        }
+    }
+    
+    if (!screen->icon_root_path)
+    {
+        LOGW("Icon root path not found, icon buttons will not be displayed");
+    }
+
     screen->frame = av_frame_alloc();
     if (!screen->frame)
     {
@@ -956,6 +1137,23 @@ void sc_screen_destroy(struct sc_screen *screen)
     }
     TTF_Quit();
 #endif
+
+    // Cleanup panel button icon textures
+    for (int i = 0; i < screen->panel.button_count; i++)
+    {
+        if (screen->panel.buttons[i].icon_texture)
+        {
+            SDL_DestroyTexture(screen->panel.buttons[i].icon_texture);
+            screen->panel.buttons[i].icon_texture = NULL;
+        }
+    }
+    
+    // Cleanup icon root path
+    if (screen->icon_root_path)
+    {
+        free(screen->icon_root_path);
+        screen->icon_root_path = NULL;
+    }
 
     // Cleanup cursors
     if (screen->hand_cursor)
@@ -1368,6 +1566,7 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         int panel_x = screen->rect.x + screen->rect.w;
         int panel_w = sc_screen_get_panel_width_scaled(screen);
         bool over_button = false;
+        int new_hovered_index = -1;
 
         if (x >= panel_x && x < panel_x + panel_w)
         {
@@ -1386,8 +1585,20 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
                     y >= btn_y && y < btn_y + button_height)
                 {
                     over_button = true;
+                    new_hovered_index = i;
                     break;
                 }
+            }
+        }
+
+        // Update hovered button state and trigger render if changed
+        if (new_hovered_index != screen->panel.hovered_button_index)
+        {
+            screen->panel.hovered_button_index = new_hovered_index;
+            
+            // Trigger immediate render to show/hide highlight effect
+            if (screen->video && screen->has_frame) {
+                sc_screen_render(screen, false);
             }
         }
 
@@ -1447,6 +1658,12 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
                     {
                         // Button clicked!
                         sc_screen_send_panel_click(screen, screen->panel.buttons[i].id);
+                        
+                        // Trigger immediate render to update button state
+                        if (screen->video && screen->has_frame) {
+                            sc_screen_render(screen, false);
+                        }
+                        
                         return true; // Consume the event
                     }
                 }
@@ -1650,9 +1867,18 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
         return;
     }
 
-    // Clear existing buttons
+    // Clear existing buttons and their icon textures
+    for (int i = 0; i < screen->panel.button_count; i++)
+    {
+        if (screen->panel.buttons[i].icon_texture)
+        {
+            SDL_DestroyTexture(screen->panel.buttons[i].icon_texture);
+            screen->panel.buttons[i].icon_texture = NULL;
+        }
+    }
     screen->panel.button_count = 0;
     screen->panel.visible = true;
+    screen->panel.hovered_button_index = -1; // Reset hover state when reloading buttons
 
     int array_size = cJSON_GetArraySize(buttons_array);
     int count = 0;
@@ -1667,6 +1893,7 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
 
         cJSON *id_item = cJSON_GetObjectItemCaseSensitive(button_item, "id");
         cJSON *text_item = cJSON_GetObjectItemCaseSensitive(button_item, "text");
+        cJSON *icon_item = cJSON_GetObjectItemCaseSensitive(button_item, "icon");
 
         // Support old format with direct button text as well
         if (!text_item)
@@ -1675,7 +1902,7 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
             cJSON *child = button_item->child;
             while (child)
             {
-                if (cJSON_IsString(child) && strcmp(child->string, "id") != 0)
+                if (cJSON_IsString(child) && strcmp(child->string, "id") != 0 && strcmp(child->string, "icon") != 0)
                 {
                     text_item = child;
                     break;
@@ -1684,15 +1911,32 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
             }
         }
 
-        if (cJSON_IsString(id_item) && cJSON_IsString(text_item))
+        if (cJSON_IsString(id_item))
         {
             strncpy(screen->panel.buttons[count].id, id_item->valuestring,
                     sizeof(screen->panel.buttons[count].id) - 1);
             screen->panel.buttons[count].id[sizeof(screen->panel.buttons[count].id) - 1] = '\0';
 
-            strncpy(screen->panel.buttons[count].text, text_item->valuestring,
-                    sizeof(screen->panel.buttons[count].text) - 1);
-            screen->panel.buttons[count].text[sizeof(screen->panel.buttons[count].text) - 1] = '\0';
+            // Clear text and icon fields
+            screen->panel.buttons[count].text[0] = '\0';
+            screen->panel.buttons[count].icon[0] = '\0';
+            screen->panel.buttons[count].icon_texture = NULL;
+
+            // Set text if provided
+            if (cJSON_IsString(text_item))
+            {
+                strncpy(screen->panel.buttons[count].text, text_item->valuestring,
+                        sizeof(screen->panel.buttons[count].text) - 1);
+                screen->panel.buttons[count].text[sizeof(screen->panel.buttons[count].text) - 1] = '\0';
+            }
+            
+            // Set icon if provided (icon takes precedence over text for rendering)
+            if (cJSON_IsString(icon_item))
+            {
+                strncpy(screen->panel.buttons[count].icon, icon_item->valuestring,
+                        sizeof(screen->panel.buttons[count].icon) - 1);
+                screen->panel.buttons[count].icon[sizeof(screen->panel.buttons[count].icon) - 1] = '\0';
+            }
 
             count++;
         }

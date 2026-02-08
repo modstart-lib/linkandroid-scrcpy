@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -ex
+. $(dirname ${BASH_SOURCE[0]})/_init
+process_args "$@"
+
+# SDL2_image version
+SDL2_IMAGE_VERSION=2.8.2
+SDL2_IMAGE_URL="https://github.com/libsdl-org/SDL_image/releases/download/release-${SDL2_IMAGE_VERSION}/SDL2_image-${SDL2_IMAGE_VERSION}.tar.gz"
+SDL2_IMAGE_SHA256=8f486bbfbcf8464dd58c9e5d93394ab0255ce68b51c5a966a918244820a76ddc
+
+SDL2_IMAGE_PROJECT_DIR="sdl2_image-$SDL2_IMAGE_VERSION"
+SDL2_IMAGE_FILENAME="$SDL2_IMAGE_PROJECT_DIR.tar.gz"
+
+cd "$SOURCES_DIR"
+
+if [[ ! -d "SDL2_image-$SDL2_IMAGE_VERSION" ]]
+then
+    get_file "$SDL2_IMAGE_URL" "$SDL2_IMAGE_FILENAME" "$SDL2_IMAGE_SHA256"
+    tar xf "$SDL2_IMAGE_FILENAME"
+fi
+
+mkdir -p "$BUILD_DIR/$SDL2_IMAGE_PROJECT_DIR"
+cd "$BUILD_DIR/$SDL2_IMAGE_PROJECT_DIR"
+
+export CFLAGS='-O2'
+export CXXFLAGS="$CFLAGS"
+
+if [[ ! -d "$DIRNAME" ]]
+then
+    mkdir "$DIRNAME"
+    cd "$DIRNAME"
+    
+    SDL2_DIR="$INSTALL_DIR/$DIRNAME"
+    
+    CMAKE_OPTS=(
+        -DCMAKE_INSTALL_PREFIX="$INSTALL_DIR/$DIRNAME"
+        -DCMAKE_BUILD_TYPE=Release
+        -DBUILD_SHARED_LIBS=OFF
+        -DSDL2IMAGE_SAMPLES=OFF
+        -DSDL2IMAGE_INSTALL=ON
+        -DSDL2IMAGE_DEPS_SHARED=OFF
+        -DSDL2IMAGE_VENDORED=OFF
+        -DSDL2IMAGE_AVIF=OFF
+        -DSDL2IMAGE_BMP=ON
+        -DSDL2IMAGE_GIF=OFF
+        -DSDL2IMAGE_JPG=OFF
+        -DSDL2IMAGE_JXL=OFF
+        -DSDL2IMAGE_LBM=OFF
+        -DSDL2IMAGE_PCX=OFF
+        -DSDL2IMAGE_PNG=ON
+        -DSDL2IMAGE_PNM=OFF
+        -DSDL2IMAGE_QOI=OFF
+        -DSDL2IMAGE_SVG=OFF
+        -DSDL2IMAGE_TGA=OFF
+        -DSDL2IMAGE_TIF=OFF
+        -DSDL2IMAGE_WEBP=OFF
+        -DSDL2IMAGE_XCF=OFF
+        -DSDL2IMAGE_XPM=OFF
+        -DSDL2IMAGE_XV=OFF
+        -DSDL2IMAGE_BACKEND_STB=ON
+        -DCMAKE_PREFIX_PATH="$SDL2_DIR"
+    )
+    
+    if [[ "$BUILD_TYPE" == cross ]]
+    then
+        CMAKE_OPTS+=(
+            -DCMAKE_SYSTEM_NAME=Windows
+            -DCMAKE_C_COMPILER=${HOST_TRIPLET}-gcc
+            -DCMAKE_CXX_COMPILER=${HOST_TRIPLET}-g++
+            -DCMAKE_RC_COMPILER=${HOST_TRIPLET}-windres
+            -DCMAKE_FIND_ROOT_PATH="$INSTALL_DIR/$DIRNAME"
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
+        )
+    fi
+    
+    cmake "$SOURCES_DIR/SDL2_image-$SDL2_IMAGE_VERSION" "${CMAKE_OPTS[@]}"
+else
+    cd "$DIRNAME"
+fi
+
+make -j
+make install

@@ -22,11 +22,11 @@
 extern struct la_websocket_client *g_websocket_client;
 
 #define DISPLAY_MARGINS 96
-#define PANEL_WIDTH 50 // Fixed width for right panel in pixels
-#define PANEL_BUTTON_HEIGHT 45
+#define PANEL_WIDTH 60
+#define PANEL_BUTTON_HEIGHT 20
 #define PANEL_START_Y 10
 #define PANEL_BUTTON_MARGIN 10
-#define PANEL_FONT_SIZE 20
+#define PANEL_FONT_SIZE 10
 
 #define DOWNCAST(SINK) container_of(SINK, struct sc_screen, frame_sink)
 
@@ -338,9 +338,9 @@ sc_screen_render_panel(struct sc_screen *screen)
 
     // Get HiDPI-scaled panel dimensions
     int panel_w = sc_screen_get_panel_width_scaled(screen);
-    int button_margin = PANEL_BUTTON_MARGIN;
-    int button_height = PANEL_BUTTON_HEIGHT;
-    int start_y = PANEL_START_Y;
+    int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
+    int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
+    int start_y = (int)(PANEL_START_Y * hidpi_scale);
 
     // Calculate panel position (right side of video rect)
     int panel_x = screen->rect.x + screen->rect.w;
@@ -555,115 +555,8 @@ bool sc_screen_init(struct sc_screen *screen,
     memset(screen->panel.buttons, 0, sizeof(screen->panel.buttons));
     screen->panel_font = NULL;
 
-#ifdef HAVE_SDL2_TTF
-    // Initialize SDL_ttf for text rendering
-    if (TTF_Init() == -1)
-    {
-        LOGW("Could not initialize SDL_ttf: %s", TTF_GetError());
-    }
-    else
-    {
-        // First try environment variable
-        char *env_font_path = getenv("SCRCPY_FONT_PATH");
-        if (env_font_path)
-        {
-            screen->panel_font = TTF_OpenFont(env_font_path, PANEL_FONT_SIZE);
-            if (screen->panel_font)
-            {
-                LOGI("Loaded custom font from SCRCPY_FONT_PATH: %s", env_font_path);
-            }
-        }
-        
-        if (!screen->panel_font)
-        {
-            // Try to load the custom font from multiple possible locations
-            const char *font_search_paths[] = {
-                NULL, // Will be set to base_path/data/font.ttf
-                "data/font.ttf", // Relative to current directory
-                "../share/scrcpy/font.ttf", // Relative to bin directory (Linux/macOS install)
-                NULL
-            };
-        
-        char *base_path = SDL_GetBasePath();
-        char *base_font_path = NULL;
-        
-        if (base_path)
-        {
-            // Construct path to base_path/data/font.ttf
-            size_t path_len = strlen(base_path) + strlen("data/font.ttf") + 1;
-            base_font_path = malloc(path_len);
-            if (base_font_path)
-            {
-                snprintf(base_font_path, path_len, "%sdata/font.ttf", base_path);
-                font_search_paths[0] = base_font_path;
-            }
-        }
-        
-        // Try each path
-        for (int i = 0; font_search_paths[i] != NULL; i++)
-        {
-            screen->panel_font = TTF_OpenFont(font_search_paths[i], PANEL_FONT_SIZE);
-            if (screen->panel_font)
-            {
-                LOGI("Loaded custom font: %s", font_search_paths[i]);
-                break;
-            }
-        }
-        
-            // Cleanup
-            if (base_font_path)
-            {
-                free(base_font_path);
-            }
-            if (base_path)
-            {
-                SDL_free(base_path);
-            }
-        }
+    // Note: Font loading will be done after window creation to get HiDPI scale
 
-        // If custom font failed, try system fonts as fallback
-        if (!screen->panel_font)
-        {
-            // Try to load a system font that supports Unicode/Emoji
-            // Note: Use regular text fonts for now. Apple Color Emoji.ttc doesn't work
-            // well with TTF_RenderUTF8_Blended (it's a colored font, needs special handling)
-            const char *font_paths[] = {
-                // macOS fonts - use text fonts that have emoji fallback
-                "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-                "/System/Library/Fonts/Helvetica.ttc",
-                "/System/Library/Fonts/PingFang.ttc",
-                // Alternative: use SF Pro which has better emoji support
-                "/System/Library/Fonts/SFNS.ttf",
-                // Linux fonts
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-                "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-                // Windows fonts
-                "C:\\Windows\\Fonts\\seguisym.ttf", // Segoe UI Symbol
-                "C:\\Windows\\Fonts\\arial.ttf",
-                "C:\\Windows\\Fonts\\msyh.ttc",
-                NULL};
-
-            for (int i = 0; font_paths[i] != NULL; i++)
-            {
-                screen->panel_font = TTF_OpenFont(font_paths[i], PANEL_FONT_SIZE);
-                if (screen->panel_font)
-                {
-                    LOGI("Loaded system font: %s", font_paths[i]);
-                    break;
-                }
-            }
-        }
-
-        if (!screen->panel_font)
-        {
-            LOGW("Could not load any font for panel buttons");
-        }
-    }
-#else
-    LOGW("SDL2_ttf not available, panel button text rendering disabled");
-#endif
 
     // Initialize cursors for panel button hover
     screen->hand_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
@@ -781,6 +674,122 @@ bool sc_screen_init(struct sc_screen *screen,
     {
         goto error_destroy_window;
     }
+
+#ifdef HAVE_SDL2_TTF
+    // Load font after window creation to get HiDPI scale
+    if (TTF_Init() == -1)
+    {
+        LOGW("Could not initialize SDL_ttf: %s", TTF_GetError());
+    }
+    else
+    {
+        // Get HiDPI scale factor
+        int ww, wh, dw, dh;
+        SDL_GetWindowSize(screen->window, &ww, &wh);
+        SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
+        float hidpi_scale = (float)dw / ww;
+        int scaled_font_size = (int)(PANEL_FONT_SIZE * hidpi_scale);
+        
+        LOGI("Font size: base=%d, hidpi_scale=%.2f, scaled=%d", 
+             PANEL_FONT_SIZE, hidpi_scale, scaled_font_size);
+
+        // First try environment variable
+        char *env_font_path = getenv("SCRCPY_FONT_PATH");
+        if (env_font_path)
+        {
+            screen->panel_font = TTF_OpenFont(env_font_path, scaled_font_size);
+            if (screen->panel_font)
+            {
+                LOGI("Loaded custom font from SCRCPY_FONT_PATH: %s", env_font_path);
+            }
+        }
+        
+        if (!screen->panel_font)
+        {
+            // Try to load the custom font from multiple possible locations
+            const char *font_search_paths[] = {
+                NULL, // Will be set to base_path/data/font.ttf
+                "data/font.ttf", // Relative to current directory
+                "../share/scrcpy/font.ttf", // Relative to bin directory (Linux/macOS install)
+                NULL
+            };
+        
+            char *base_path = SDL_GetBasePath();
+            char *base_font_path = NULL;
+        
+            if (base_path)
+            {
+                // Construct path to base_path/data/font.ttf
+                size_t path_len = strlen(base_path) + strlen("data/font.ttf") + 1;
+                base_font_path = malloc(path_len);
+                if (base_font_path)
+                {
+                    snprintf(base_font_path, path_len, "%sdata/font.ttf", base_path);
+                    font_search_paths[0] = base_font_path;
+                }
+            }
+        
+            // Try each path
+            for (int i = 0; font_search_paths[i] != NULL; i++)
+            {
+                screen->panel_font = TTF_OpenFont(font_search_paths[i], scaled_font_size);
+                if (screen->panel_font)
+                {
+                    LOGI("Loaded custom font: %s", font_search_paths[i]);
+                    break;
+                }
+            }
+        
+            // Cleanup
+            if (base_font_path)
+            {
+                free(base_font_path);
+            }
+            if (base_path)
+            {
+                SDL_free(base_path);
+            }
+        }
+
+        // If custom font failed, try system fonts as fallback
+        if (!screen->panel_font)
+        {
+            // Try to load a system font that supports Unicode/Emoji
+            const char *font_paths[] = {
+                // macOS fonts
+                "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+                "/System/Library/Fonts/Helvetica.ttc",
+                "/System/Library/Fonts/PingFang.ttc",
+                "/System/Library/Fonts/SFNS.ttf",
+                // Linux fonts
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+                "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+                // Windows fonts
+                "C:\\Windows\\Fonts\\seguisym.ttf",
+                "C:\\Windows\\Fonts\\arial.ttf",
+                "C:\\Windows\\Fonts\\msyh.ttc",
+                NULL
+            };
+
+            for (int i = 0; font_paths[i] != NULL; i++)
+            {
+                screen->panel_font = TTF_OpenFont(font_paths[i], scaled_font_size);
+                if (screen->panel_font)
+                {
+                    LOGI("Loaded system font: %s", font_paths[i]);
+                    break;
+                }
+            }
+        }
+
+        if (!screen->panel_font)
+        {
+            LOGW("Could not load any font for panel buttons");
+        }
+    }
+#endif
 
     screen->frame = av_frame_alloc();
     if (!screen->frame)
@@ -1363,10 +1372,10 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         if (x >= panel_x && x < panel_x + panel_w)
         {
             // Mouse is in panel, check if over a button
-            int button_margin = PANEL_BUTTON_MARGIN;
-            int button_height = PANEL_BUTTON_HEIGHT;
+            int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
+            int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
             int button_width = panel_w - 2 * button_margin;
-            int start_y = PANEL_START_Y;
+            int start_y = (int)(PANEL_START_Y * hidpi_scale);
 
             for (int i = 0; i < screen->panel.button_count; i++)
             {
@@ -1423,10 +1432,10 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
             if (in_panel)
             {
                 // Mouse down in panel area - check which button was clicked
-                int button_margin = PANEL_BUTTON_MARGIN;
-                int button_height = PANEL_BUTTON_HEIGHT;
+                int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
+                int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
                 int button_width = panel_w - 2 * button_margin;
-                int start_y = PANEL_START_Y;
+                int start_y = (int)(PANEL_START_Y * hidpi_scale);
 
                 for (int i = 0; i < screen->panel.button_count; i++)
                 {

@@ -51,6 +51,9 @@ else
         -DLWS_WITHOUT_TEST_SERVER_EXTPOLL=ON
         -DLWS_WITHOUT_TEST_PING=ON
         -DLWS_WITHOUT_TEST_CLIENT=ON
+        -DLWS_WITH_LIBUV=OFF
+        -DLWS_WITH_LIBEVENT=OFF
+        -DLWS_WITH_GLIB=OFF
     )
 
     if [[ "$LINK_TYPE" == static ]]

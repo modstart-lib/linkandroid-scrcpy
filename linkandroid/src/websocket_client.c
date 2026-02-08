@@ -9,6 +9,10 @@
 #include <libwebsockets.h>
 #include <SDL2/SDL_log.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "json/cJSON.h"
 #include "../../app/src/control_msg.h"
 #include "../../app/src/util/log.h"
@@ -259,6 +263,10 @@ static void *websocket_thread(void *arg)
 {
     struct la_websocket_client *client = (struct la_websocket_client *)arg;
 
+    // Additional logging for debugging
+    LOGI("WebSocket thread started for %s://%s:%d%s", 
+         client->protocol, client->address, client->port, client->path);
+
     struct lws_context_creation_info info;
     memset(&info, 0, sizeof(info));
 
@@ -266,19 +274,27 @@ static void *websocket_thread(void *arg)
     info.protocols = protocols;
     info.gid = -1;
     info.uid = -1;
-    // Minimal options: only SSL init, disable all server features
-    info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+    // Minimal options for client-only usage
+    // Note: We build with -DLWS_WITH_SSL=OFF, so don't use SSL-related options
+    info.options = 0;
     info.user = client;
 
     // Disable libwebsockets logging to reduce noise
     lws_set_log_level(LLL_ERR | LLL_WARN, NULL);
 
+    LOGI("Creating libwebsockets context...");
     client->context = lws_create_context(&info);
     if (!client->context)
     {
         LOGE("Failed to create libwebsockets context");
+#ifdef _WIN32
+        LOGE("Windows error code: %lu", GetLastError());
+        LOGE("Make sure ws2_32.dll and required dependencies are available");
+#endif
+        LOGW("WebSocket functionality will be disabled");
         return NULL;
     }
+    LOGI("Libwebsockets context created successfully");
 
     // Connect only once (no automatic reconnection)
     bool connection_attempted = false;
@@ -306,8 +322,16 @@ static void *websocket_thread(void *arg)
             client->wsi = lws_client_connect_via_info(&ccinfo);
             if (!client->wsi)
             {
-                LOGE("Failed to initiate WebSocket connection");
-                // Still mark as attempted to prevent retry loop
+                LOGE("Failed to initiate WebSocket connection to %s:%d%s", 
+                     client->address, client->port, client->path);
+#ifdef _WIN32
+                LOGE("Windows error code: %lu", GetLastError());
+#endif
+                LOGW("LinkAndroid will continue without WebSocket connection");
+            }
+            else
+            {
+                LOGI("WebSocket connection initiated");
             }
             connection_attempted = true;
         }

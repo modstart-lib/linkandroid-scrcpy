@@ -177,6 +177,23 @@ sdl_set_hints(const char *render_driver)
     {
         LOGW("Could not allow joystick background events");
     }
+
+#ifdef _WIN32
+    // Windows-specific optimizations for better performance
+    // Prefer Direct3D11 for better compatibility and performance on Windows
+    if (!render_driver) {
+        if (!SDL_SetHint(SDL_HINT_RENDER_DRIVER, "direct3d11"))
+        {
+            LOGW("Could not set Direct3D11 render driver");
+        }
+    }
+
+    // Enable batching for better performance
+    if (!SDL_SetHint(SDL_HINT_RENDER_BATCHING, "1"))
+    {
+        LOGW("Could not enable render batching");
+    }
+#endif
 }
 
 static void

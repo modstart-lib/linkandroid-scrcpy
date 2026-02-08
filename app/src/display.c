@@ -31,8 +31,9 @@ sc_display_init_novideo_icon(struct sc_display *display,
 bool
 sc_display_init(struct sc_display *display, SDL_Window *window,
                 SDL_Surface *icon_novideo, bool mipmaps) {
-    display->renderer =
-        SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    // Use VSYNC to reduce tearing and improve smoothness, especially on Windows
+    uint32_t renderer_flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC;
+    display->renderer = SDL_CreateRenderer(window, -1, renderer_flags);
     if (!display->renderer) {
         LOGE("Could not create renderer: %s", SDL_GetError());
         return false;

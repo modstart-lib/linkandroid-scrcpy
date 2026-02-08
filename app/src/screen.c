@@ -23,10 +23,10 @@ extern struct la_websocket_client *g_websocket_client;
 
 #define DISPLAY_MARGINS 96
 #define PANEL_WIDTH 50 // Fixed width for right panel in pixels
-#define PANEL_BUTTON_HEIGHT 60
+#define PANEL_BUTTON_HEIGHT 45
 #define PANEL_START_Y 10
 #define PANEL_BUTTON_MARGIN 10
-#define PANEL_FONT_SIZE 24
+#define PANEL_FONT_SIZE 20
 
 #define DOWNCAST(SINK) container_of(SINK, struct sc_screen, frame_sink)
 
@@ -338,9 +338,9 @@ sc_screen_render_panel(struct sc_screen *screen)
 
     // Get HiDPI-scaled panel dimensions
     int panel_w = sc_screen_get_panel_width_scaled(screen);
-    int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
-    int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
-    int start_y = (int)(PANEL_START_Y * hidpi_scale);
+    int button_margin = PANEL_BUTTON_MARGIN;
+    int button_height = PANEL_BUTTON_HEIGHT;
+    int start_y = PANEL_START_Y;
 
     // Calculate panel position (right side of video rect)
     int panel_x = screen->rect.x + screen->rect.w;
@@ -358,7 +358,7 @@ sc_screen_render_panel(struct sc_screen *screen)
     for (int i = 0; i < screen->panel.button_count; i++)
     {
         int btn_x = panel_x + button_margin;
-        int btn_y = start_y + i * (button_height + button_margin);
+        int btn_y = screen->rect.y + start_y + i * (button_height + button_margin);
 
         // Draw button background (rounded rectangle)
         // For simplicity, draw a regular rectangle first
@@ -1363,15 +1363,15 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         if (x >= panel_x && x < panel_x + panel_w)
         {
             // Mouse is in panel, check if over a button
-            int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
-            int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
+            int button_margin = PANEL_BUTTON_MARGIN;
+            int button_height = PANEL_BUTTON_HEIGHT;
             int button_width = panel_w - 2 * button_margin;
-            int start_y = (int)(PANEL_START_Y * hidpi_scale);
+            int start_y = PANEL_START_Y;
 
             for (int i = 0; i < screen->panel.button_count; i++)
             {
                 int btn_x = panel_x + button_margin;
-                int btn_y = start_y + i * (button_height + button_margin);
+                int btn_y = screen->rect.y + start_y + i * (button_height + button_margin);
 
                 if (x >= btn_x && x < btn_x + button_width &&
                     y >= btn_y && y < btn_y + button_height)
@@ -1423,15 +1423,15 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
             if (in_panel)
             {
                 // Mouse down in panel area - check which button was clicked
-                int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
-                int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
+                int button_margin = PANEL_BUTTON_MARGIN;
+                int button_height = PANEL_BUTTON_HEIGHT;
                 int button_width = panel_w - 2 * button_margin;
-                int start_y = (int)(PANEL_START_Y * hidpi_scale);
+                int start_y = PANEL_START_Y;
 
                 for (int i = 0; i < screen->panel.button_count; i++)
                 {
                     int btn_x = panel_x + button_margin;
-                    int btn_y = start_y + i * (button_height + button_margin);
+                    int btn_y = screen->rect.y + start_y + i * (button_height + button_margin);
 
                     if (x >= btn_x && x < btn_x + button_width &&
                         y >= btn_y && y < btn_y + button_height)

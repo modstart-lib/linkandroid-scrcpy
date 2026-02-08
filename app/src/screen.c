@@ -22,11 +22,11 @@
 extern struct la_websocket_client *g_websocket_client;
 
 #define DISPLAY_MARGINS 96
-#define PANEL_WIDTH 60
-#define PANEL_BUTTON_HEIGHT 20
+#define PANEL_WIDTH 70
+#define PANEL_BUTTON_HEIGHT 30
 #define PANEL_START_Y 10
 #define PANEL_BUTTON_MARGIN 10
-#define PANEL_FONT_SIZE 10
+#define PANEL_FONT_SIZE 12
 
 #define DOWNCAST(SINK) container_of(SINK, struct sc_screen, frame_sink)
 
@@ -1703,11 +1703,9 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
 
     cJSON_Delete(root);
 
-    // Trigger a re-render with updated layout
-    if (screen->video)
-    {
-        sc_screen_render(screen, true);
-    }
+    // Note: Do not trigger immediate re-render here to avoid potential deadlock
+    // on Windows when called from WebSocket callback. The panel will be rendered
+    // in the next normal SDL render cycle.
 }
 
 void sc_screen_send_panel_click(struct sc_screen *screen, const char *button_id)

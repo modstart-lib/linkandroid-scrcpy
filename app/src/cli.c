@@ -1071,9 +1071,9 @@ static const struct sc_option options[] = {
     {
         .longopt_id = OPT_LINKANDROID_PANEL_SHOW,
         .longopt = "linkandroid-panel-show",
-        .text = "Reserve space for panel on the right side at startup.\n"
-                "This prevents the video from being squeezed when panel\n"
-                "buttons are added later via WebSocket.",
+        .text = "Enable the right-side panel area.\n"
+                "The panel is hidden by default and shown/hidden dynamically\n"
+                "when panel data is received via WebSocket.",
     },
     {
         .longopt_id = OPT_LINKANDROID_PREVIEW_INTERVAL,

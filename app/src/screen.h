@@ -119,6 +119,10 @@ struct sc_screen
 
     // LinkAndroid: Track if ready event has been sent to WebSocket server
     bool ready_event_sent;
+    // LinkAndroid: Panel visibility changed, force content rect recalc on next render
+    bool panel_layout_dirty;
+    // LinkAndroid: Panel feature enabled (set by --linkandroid-panel-show)
+    bool panel_enabled;
 };
 
 struct sc_screen_params
@@ -152,7 +156,7 @@ struct sc_screen_params
     bool fullscreen;
     bool start_fps_counter;
 
-    bool panel_show;  // Reserve space for panel at startup
+    bool panel_show;  // Enable panel area (shown/hidden dynamically via WebSocket)
     bool hide_window; // LinkAndroid: Keep window hidden (for preview-only mode)
 };
 

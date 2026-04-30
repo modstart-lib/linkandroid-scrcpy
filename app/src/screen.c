@@ -291,8 +291,9 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect)
 {
     assert(screen->video);
 
-    if (update_content_rect)
+    if (update_content_rect || screen->panel_layout_dirty)
     {
+        screen->panel_layout_dirty = false;
         sc_screen_update_content_rect(screen);
     }
 
@@ -313,9 +314,11 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect)
     if (!screen->ready_event_sent && screen->has_frame && g_websocket_client)
     {
         const char *ready_event = "{\"type\":\"ready\"}";
-        la_websocket_client_send(g_websocket_client, ready_event);
-        LOGI("LinkAndroid: Sent ready event to WebSocket server");
-        screen->ready_event_sent = true;
+        if (la_websocket_client_send(g_websocket_client, ready_event))
+        {
+            LOGI("LinkAndroid: Sent ready event to WebSocket server");
+            screen->ready_event_sent = true;
+        }
     }
 }
 
@@ -655,8 +658,10 @@ bool sc_screen_init(struct sc_screen *screen,
 
     // Initialize panel configuration
     screen->panel.button_count = 0;
-    // Set panel visibility based on startup parameter
+    // Panel visible at startup if --linkandroid-panel-show was specified
     screen->panel.visible = params->panel_show;
+    screen->panel_layout_dirty = false;
+    screen->panel_enabled = params->panel_show;
     screen->panel.hovered_button_index = -1; // No button hovered initially
     memset(screen->panel.buttons, 0, sizeof(screen->panel.buttons));
     screen->panel_font = NULL;
@@ -1852,9 +1857,9 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
     }
 
     // Ignore panel data if --linkandroid-panel-show was not specified
-    if (!screen->panel.visible)
+    if (!screen->panel_enabled)
     {
-        LOGD("Panel data received but panel display is disabled (use --linkandroid-panel-show to enable)");
+        LOGD("Panel data received but panel is disabled (use --linkandroid-panel-show to enable)");
         cJSON_Delete(root);
         return;
     }
@@ -1943,6 +1948,11 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
     }
 
     screen->panel.button_count = count;
+    // Hide panel when no buttons — restores full-screen video layout
+    if (count == 0) {
+        screen->panel.visible = false;
+    }
+    screen->panel_layout_dirty = true; // force content rect recalc on next render
     LOGI("Panel updated with %d buttons", count);
 
     cJSON_Delete(root);

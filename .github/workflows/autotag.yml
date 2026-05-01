@@ -1,0 +1,21 @@
+name: Auto Tag on Master Push
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  autotag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create tag with timestamp
+        run: |
+          TAG=$(date -u +"%Y%m%d%H%M%S")
+          git tag "v$TAG"
+          git push origin "$TAG"

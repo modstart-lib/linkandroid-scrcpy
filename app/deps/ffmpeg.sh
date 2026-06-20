@@ -38,9 +38,6 @@ else
         export CFLAGS='-static-libgcc -static'
         export CXXFLAGS="$CFLAGS"
         export LDFLAGS='-static-libgcc -static'
-    elif [[ "$HOST" == "macos" ]]
-    then
-        export PKG_CONFIG_PATH="/opt/homebrew/opt/zlib/lib/pkgconfig"
     fi
 
     export PKG_CONFIG_PATH="$INSTALL_DIR/$DIRNAME/lib/pkgconfig:$PKG_CONFIG_PATH"

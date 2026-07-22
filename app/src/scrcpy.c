@@ -503,9 +503,7 @@ scrcpy(struct scrcpy_options *options)
             LOGW("Could not set Direct3D11 render driver");
         }
     }
-    if (!SDL_SetHint(SDL_HINT_RENDER_BATCHING, "1")) {
-        LOGW("Could not enable render batching");
-    }
+    // SDL_HINT_RENDER_BATCHING was removed in SDL3; batching is always enabled.
 #endif
 
     if (!sc_server_start(&s->server))

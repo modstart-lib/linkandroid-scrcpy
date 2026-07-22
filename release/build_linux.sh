@@ -28,6 +28,8 @@ ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-linux"
 # Never fall back to system libs
 unset PKG_CONFIG_PATH
 export PKG_CONFIG_LIBDIR="$DEPS_INSTALL_DIR/lib/pkgconfig"
+# Help meson's cmake backend find cmake config files (e.g., libwebsocketsConfig.cmake)
+export CMAKE_PREFIX_PATH="$DEPS_INSTALL_DIR"
 
 rm -rf "$LINUX_BUILD_DIR"
 meson setup "$LINUX_BUILD_DIR" \

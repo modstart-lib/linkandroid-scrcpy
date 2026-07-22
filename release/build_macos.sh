@@ -40,6 +40,8 @@ SDL2_TTF_PREFIX="$(brew --prefix sdl2_ttf 2>/dev/null || echo /opt/homebrew/opt/
 # Never fall back to system libs
 unset PKG_CONFIG_PATH
 export PKG_CONFIG_LIBDIR="$DEPS_INSTALL_DIR/lib/pkgconfig"
+# Help meson's cmake backend find cmake config files (e.g., libwebsocketsConfig.cmake)
+export CMAKE_PREFIX_PATH="$DEPS_INSTALL_DIR"
 
 rm -rf "$MACOS_BUILD_DIR"
 meson setup "$MACOS_BUILD_DIR" \

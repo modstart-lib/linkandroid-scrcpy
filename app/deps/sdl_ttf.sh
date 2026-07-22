@@ -94,6 +94,11 @@ then
         -DCMAKE_PREFIX_PATH="$SDL3_DIR;$FREETYPE_DIR"
         -DFREETYPE_LIBRARY="$FREETYPE_DIR/lib/libfreetype.a"
         -DFREETYPE_INCLUDE_DIRS="$FREETYPE_DIR/include/freetype2"
+        # zlib is needed by FreeType2 (for gzip support in SFNT fonts)
+        # but is not automatically linked when we use a static freetype library.
+        # CMAKE_C_STANDARD_LIBRARIES appends to the end of the link line,
+        # which is necessary because the linker needs -lz AFTER -lfreetype.
+        -DCMAKE_C_STANDARD_LIBRARIES="-lz"
     )
     
     if [[ "$BUILD_TYPE" == cross ]]

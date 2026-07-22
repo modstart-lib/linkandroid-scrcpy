@@ -3,10 +3,19 @@ set -ex
 . $(dirname ${BASH_SOURCE[0]})/_init "$@"
 
 VERSION=37.0.0
-URL="https://dl.google.com/android/repository/platform-tools_r$VERSION-linux.zip"
-SHA256SUM=198ae156ab285fa555987219af237b31102fefe8b9d2bc274708a8d4f2865a07
 
-PROJECT_DIR="platform-tools-$VERSION-linux"
+ARCH=$(uname -m)
+if [[ "$ARCH" == aarch64 || "$ARCH" == arm64 ]]; then
+    URL="https://dl.google.com/android/repository/platform-tools_r$VERSION-linux-arm64.zip"
+    # TODO: Update SHA256SUM for ARM64 after first successful download
+    SHA256SUM=""
+    PROJECT_DIR="platform-tools-$VERSION-linux-arm64"
+else
+    URL="https://dl.google.com/android/repository/platform-tools_r$VERSION-linux.zip"
+    SHA256SUM=198ae156ab285fa555987219af237b31102fefe8b9d2bc274708a8d4f2865a07
+    PROJECT_DIR="platform-tools-$VERSION-linux"
+fi
+
 FILENAME="$PROJECT_DIR.zip"
 
 cd "$SOURCES_DIR"
@@ -15,7 +24,16 @@ if [[ -d "$PROJECT_DIR" ]]
 then
     echo "$PWD/$PROJECT_DIR" found
 else
-    get_file "$URL" "$FILENAME" "$SHA256SUM"
+    if [[ -n "$SHA256SUM" ]]; then
+        get_file "$URL" "$FILENAME" "$SHA256SUM"
+    else
+        if [[ ! -f "$FILENAME" ]]; then
+            echo "$FILENAME: not found, downloading..."
+            wget "$URL" -O "$FILENAME"
+        else
+            echo "$FILENAME: found"
+        fi
+    fi
     mkdir -p "$PROJECT_DIR"
     cd "$PROJECT_DIR"
     ZIP_PREFIX=platform-tools

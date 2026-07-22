@@ -68,6 +68,9 @@ bool sc_controller_init(struct sc_controller *controller, sc_socket control_sock
     controller->control_socket = control_socket;
     controller->stopped = false;
 
+    controller->resize_display.width = 0;
+    controller->resize_display.height = 0;
+
     assert(cbs && cbs->on_ended);
     controller->cbs = cbs;
     controller->cbs_userdata = cbs_userdata;
@@ -99,9 +102,12 @@ void sc_controller_destroy(struct sc_controller *controller)
     sc_receiver_destroy(&controller->receiver);
 }
 
-bool sc_controller_push_msg(struct sc_controller *controller,
-                            const struct sc_control_msg *msg)
-{
+bool
+sc_controller_push_msg(struct sc_controller *controller,
+                       const struct sc_control_msg *msg) {
+    // RESIZE_DISPLAY messages are handled separately
+    assert(msg->type != SC_CONTROL_MSG_TYPE_RESIZE_DISPLAY);
+
     if (sc_get_log_level() <= SC_LOG_LEVEL_VERBOSE)
     {
         sc_control_msg_log(msg);
@@ -153,6 +159,20 @@ bool sc_controller_push_msg(struct sc_controller *controller,
     return pushed;
 }
 
+void
+sc_controller_resize_display(struct sc_controller *controller,
+                             uint16_t width, uint16_t height) {
+    assert(width && height);
+    sc_mutex_lock(&controller->mutex);
+    bool was_set = controller->resize_display.width;
+    controller->resize_display.width = width;
+    controller->resize_display.height = height;
+    if (!was_set) {
+        sc_cond_signal(&controller->msg_cond);
+    }
+    sc_mutex_unlock(&controller->mutex);
+}
+
 static bool
 process_msg(struct sc_controller *controller,
             const struct sc_control_msg *msg, bool *eos)
@@ -186,8 +206,9 @@ run_controller(void *data)
     for (;;)
     {
         sc_mutex_lock(&controller->mutex);
-        while (!controller->stopped && sc_vecdeque_is_empty(&controller->queue))
-        {
+        while (!controller->stopped
+                && !controller->resize_display.width
+                && sc_vecdeque_is_empty(&controller->queue)) {
             sc_cond_wait(&controller->msg_cond, &controller->mutex);
         }
         if (controller->stopped)
@@ -198,9 +219,25 @@ run_controller(void *data)
             break;
         }
 
-        assert(!sc_vecdeque_is_empty(&controller->queue));
-        struct sc_control_msg msg = sc_vecdeque_pop(&controller->queue);
+        bool has_resize_display = controller->resize_display.width;
+        assert(has_resize_display || !sc_vecdeque_is_empty(&controller->queue));
+
+        struct sc_control_msg msg;
+
+        if (has_resize_display) {
+            msg.type = SC_CONTROL_MSG_TYPE_RESIZE_DISPLAY;
+            msg.resize_display.width = controller->resize_display.width;
+            msg.resize_display.height = controller->resize_display.height;
+            controller->resize_display.width = 0;
+            controller->resize_display.height = 0;
+        } else {
+            msg = sc_vecdeque_pop(&controller->queue);
+        }
         sc_mutex_unlock(&controller->mutex);
+
+        if (sc_get_log_level() <= SC_LOG_LEVEL_VERBOSE) {
+            sc_control_msg_log(&msg);
+        }
 
         bool eos;
         bool ok = process_msg(controller, &msg, &eos);

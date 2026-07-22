@@ -5,9 +5,16 @@ build/
 /release-*/
 .idea/
 .gradle/
+.cache/
 /x/
 local.properties
 /scrcpy-server
 .DS_Store
 node_modules
 server/scrcpy-server-debug
+/_temp/
+
+
+# OpenCode
+_temp/
+DEV_*.md

@@ -3,9 +3,9 @@ set -ex
 . $(dirname ${BASH_SOURCE[0]})/_init
 process_args "$@"
 
-VERSION=7.1.1
+VERSION=8.1.2
 URL="https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz"
-SHA256SUM=733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
+SHA256SUM=464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c
 
 PROJECT_DIR="ffmpeg-$VERSION"
 FILENAME="$PROJECT_DIR.tar.xz"
@@ -38,9 +38,6 @@ else
         export CFLAGS='-static-libgcc -static'
         export CXXFLAGS="$CFLAGS"
         export LDFLAGS='-static-libgcc -static'
-    elif [[ "$HOST" == "macos" ]]
-    then
-        export PKG_CONFIG_PATH="/opt/homebrew/opt/zlib/lib/pkgconfig"
     fi
 
     export PKG_CONFIG_PATH="$INSTALL_DIR/$DIRNAME/lib/pkgconfig:$PKG_CONFIG_PATH"
@@ -51,8 +48,7 @@ else
         --extra-cflags="-O2 -fPIC"
         --disable-programs
         --disable-doc
-        --enable-swscale
-        --disable-postproc
+        --disable-swscale
         --disable-avfilter
         --disable-network
         --disable-everything
@@ -64,6 +60,8 @@ else
         --enable-decoder=h264
         --enable-decoder=hevc
         --enable-decoder=av1
+        --enable-decoder=vp8
+        --enable-decoder=vp9
         --enable-decoder=libdav1d
         --enable-decoder=pcm_s16le
         --enable-decoder=opus

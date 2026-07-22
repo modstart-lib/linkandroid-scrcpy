@@ -7,7 +7,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <libwebsockets.h>
-#include <SDL2/SDL_log.h>
+#include <SDL3/SDL_log.h>
 
 #ifdef _WIN32
 #include <windows.h>

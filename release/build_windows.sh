@@ -32,9 +32,12 @@ app/deps/libwebsockets.sh $WINXX cross static
 DEPS_INSTALL_DIR="$PWD/app/deps/work/install/$WINXX-cross-static"
 ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-windows"
 
+# Never fall back to system libs
+unset PKG_CONFIG_PATH
+export PKG_CONFIG_LIBDIR="$DEPS_INSTALL_DIR/lib/pkgconfig"
+
 rm -rf "$WINXX_BUILD_DIR"
 meson setup "$WINXX_BUILD_DIR" \
-    --pkg-config-path="$DEPS_INSTALL_DIR/lib/pkgconfig" \
     -Dc_args="-I$DEPS_INSTALL_DIR/include" \
     -Dc_link_args="-L$DEPS_INSTALL_DIR/lib -static-libgcc -static-libstdc++ -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive" \
     --cross-file=cross_$WINXX.txt \
@@ -49,11 +52,13 @@ ninja -C "$WINXX_BUILD_DIR"
 # Group intermediate outputs into a 'dist' directory
 mkdir -p "$WINXX_BUILD_DIR/dist"
 cp "$WINXX_BUILD_DIR"/app/scrcpy.exe "$WINXX_BUILD_DIR/dist/"
-cp app/data/scrcpy-console.bat "$WINXX_BUILD_DIR/dist/"
 cp app/data/scrcpy-noconsole.vbs "$WINXX_BUILD_DIR/dist/"
+cp app/data/scrcpy.png "$WINXX_BUILD_DIR/dist/"
 cp app/data/icon.png "$WINXX_BUILD_DIR/dist/"
 cp app/data/font.ttf "$WINXX_BUILD_DIR/dist/"
+cp app/data/disconnected.png "$WINXX_BUILD_DIR/dist/"
 cp app/data/open_a_terminal_here.bat "$WINXX_BUILD_DIR/dist/"
+cp LICENSE "$WINXX_BUILD_DIR/dist/LICENSE.txt"
 # Copy panel button icons
 for icon in back.png follow.png follow_active.png home.png quit.png screenshot.png task.png top.png top_active.png v-minus.png v-plus.png; do
     if [ -f "app/data/$icon" ]; then
@@ -84,5 +89,4 @@ if [ -n "$MINGW_BIN" ]; then
         fi
     done
 fi
-
 cp -r "$ADB_INSTALL_DIR"/. "$WINXX_BUILD_DIR/dist/"

@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
@@ -227,24 +227,11 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
         first_log = false;
     }
 
-    // Create a surface to read pixels into (original size)
-    SDL_Surface *surface = SDL_CreateRGBSurface(0, width, height, 32,
-                                                0x00FF0000,
-                                                0x0000FF00,
-                                                0x000000FF,
-                                                0xFF000000);
+    // Read pixels from renderer (SDL3 creates the surface directly)
+    SDL_Surface *surface = SDL_RenderReadPixels(renderer, rect);
     if (!surface)
     {
-        LOGE("Failed to create surface for capture: %s", SDL_GetError());
-        return false;
-    }
-
-    // Read pixels from renderer (only the content rect)
-    if (SDL_RenderReadPixels(renderer, rect, SDL_PIXELFORMAT_ARGB8888,
-                             surface->pixels, surface->pitch) != 0)
-    {
         LOGE("Failed to read pixels from renderer: %s", SDL_GetError());
-        SDL_FreeSurface(surface);
         return false;
     }
     
@@ -252,30 +239,26 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
     SDL_Surface *final_surface = surface;
     if (ratio != 100)
     {
-        final_surface = SDL_CreateRGBSurface(0, scaled_width, scaled_height, 32,
-                                            0x00FF0000,
-                                            0x0000FF00,
-                                            0x000000FF,
-                                            0xFF000000);
+        final_surface = SDL_CreateSurface(scaled_width, scaled_height, SDL_PIXELFORMAT_ARGB8888);
         if (!final_surface)
         {
             LOGE("Failed to create scaled surface: %s", SDL_GetError());
-            SDL_FreeSurface(surface);
+            SDL_DestroySurface(surface);
             return false;
         }
         
-        // Scale the surface using SDL_BlitScaled
+        // Scale the surface using SDL_BlitSurfaceScaled
         SDL_Rect dst_rect = {0, 0, scaled_width, scaled_height};
-        if (SDL_BlitScaled(surface, NULL, final_surface, &dst_rect) != 0)
+        if (!SDL_BlitSurfaceScaled(surface, NULL, final_surface, &dst_rect, SDL_SCALEMODE_LINEAR))
         {
             LOGE("Failed to scale surface: %s", SDL_GetError());
-            SDL_FreeSurface(final_surface);
-            SDL_FreeSurface(surface);
+            SDL_DestroySurface(final_surface);
+            SDL_DestroySurface(surface);
             return false;
         }
         
         // Free original surface, we only need the scaled one
-        SDL_FreeSurface(surface);
+        SDL_DestroySurface(surface);
     }
 
     // Encode to PNG using libavcodec with scaled dimensions
@@ -283,7 +266,7 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
     if (!codec)
     {
         LOGE("PNG codec not found");
-        SDL_FreeSurface(final_surface);
+        SDL_DestroySurface(final_surface);
         return false;
     }
 
@@ -291,7 +274,7 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
     if (!codec_ctx)
     {
         LOGE("Failed to allocate codec context");
-        SDL_FreeSurface(final_surface);
+        SDL_DestroySurface(final_surface);
         return false;
     }
 
@@ -305,7 +288,7 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
     {
         LOGE("Failed to open codec");
         avcodec_free_context(&codec_ctx);
-        SDL_FreeSurface(final_surface);
+        SDL_DestroySurface(final_surface);
         return false;
     }
 
@@ -314,7 +297,7 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
     {
         LOGE("Failed to allocate frame");
         avcodec_free_context(&codec_ctx);
-        SDL_FreeSurface(final_surface);
+        SDL_DestroySurface(final_surface);
         return false;
     }
 
@@ -327,7 +310,7 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
         LOGE("Failed to allocate frame buffer");
         av_frame_free(&frame);
         avcodec_free_context(&codec_ctx);
-        SDL_FreeSurface(final_surface);
+        SDL_DestroySurface(final_surface);
         return false;
     }
 
@@ -339,7 +322,7 @@ static bool capture_and_encode_png(SDL_Renderer *renderer,
                scaled_width * 4);
     }
 
-    SDL_FreeSurface(final_surface);
+    SDL_DestroySurface(final_surface);
 
     // Encode frame
     AVPacket *pkt = av_packet_alloc();
@@ -416,7 +399,7 @@ static void *preview_sender_thread(void *arg)
         }
 
         // Check if screen has a frame available
-        if (!sender->screen || !sender->screen->has_frame || !sender->screen->frame)
+        if (!sender->screen || !sender->screen->frame)
         {
             continue;
         }

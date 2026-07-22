@@ -2,20 +2,21 @@
 
 #include <assert.h>
 #include <string.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
-#ifdef HAVE_SDL2_IMAGE
-#include <SDL2/SDL_image.h>
+#ifdef HAVE_SDL3_IMAGE
+#include <SDL3_image/SDL_image.h>
 #endif
 
-#ifdef HAVE_SDL2_TTF
-#include <SDL2/SDL_ttf.h>
+#ifdef HAVE_SDL3_TTF
+#include <SDL3_ttf/SDL_ttf.h>
 #endif
 
 #include "events.h"
 #include "icon.h"
 #include "options.h"
 #include "util/log.h"
+#include "util/sdl.h"
 
 // LinkAndroid: WebSocket event forwarding
 #include "input_manager.h"
@@ -37,6 +38,27 @@ extern struct la_websocket_client *g_websocket_client;
 // Forward declarations
 static void sc_screen_render_panel(struct sc_screen *screen);
 
+static void
+set_aspect_ratio(struct sc_screen *screen, struct sc_size content_size) {
+    assert(content_size.width && content_size.height);
+
+    if (screen->window_aspect_ratio_lock) {
+        // When the panel is visible, do NOT lock the window aspect ratio.
+        // The panel adds extra width that would make a fixed AR incorrect
+        // (the correct AR = content_AR + 60/H, which depends on window height).
+        // compute_content_rect() already handles content AR inside the
+        // remaining space after subtracting the panel.
+        if (screen->panel.visible) {
+            return;
+        }
+        float ar = (float) content_size.width / content_size.height;
+        bool ok = SDL_SetWindowAspectRatio(screen->window, ar, ar);
+        if (!ok) {
+            LOGW("Could not set window aspect ratio: %s", SDL_GetError());
+        }
+    }
+}
+
 static inline struct sc_size
 get_oriented_size(struct sc_size size, enum sc_orientation orientation)
 {
@@ -54,41 +76,11 @@ get_oriented_size(struct sc_size size, enum sc_orientation orientation)
     return oriented_size;
 }
 
-// get the window size in a struct sc_size
-static struct sc_size
-get_window_size(const struct sc_screen *screen)
-{
-    int width;
-    int height;
-    SDL_GetWindowSize(screen->window, &width, &height);
-
-    struct sc_size size;
-    size.width = width;
-    size.height = height;
-    return size;
-}
-
-static struct sc_point
-get_window_position(const struct sc_screen *screen)
-{
-    int x;
-    int y;
-    SDL_GetWindowPosition(screen->window, &x, &y);
-
-    struct sc_point point;
-    point.x = x;
-    point.y = y;
-    return point;
-}
-
-// set the window size to be applied when fullscreen is disabled
-static void
-set_window_size(struct sc_screen *screen, struct sc_size new_size)
-{
-    assert(!screen->fullscreen);
-    assert(!screen->maximized);
-    assert(!screen->minimized);
-    SDL_SetWindowSize(screen->window, new_size.width, new_size.height);
+static inline bool
+is_windowed(struct sc_screen *screen) {
+    return !(SDL_GetWindowFlags(screen->window) & (SDL_WINDOW_FULLSCREEN
+                                                 | SDL_WINDOW_MINIMIZED
+                                                 | SDL_WINDOW_MAXIMIZED));
 }
 
 // get the preferred display bounds (i.e. the screen bounds with some margins)
@@ -96,8 +88,14 @@ static bool
 get_preferred_display_bounds(struct sc_size *bounds)
 {
     SDL_Rect rect;
-    if (SDL_GetDisplayUsableBounds(0, &rect))
-    {
+    SDL_DisplayID display = SDL_GetPrimaryDisplay();
+    if (!display) {
+        LOGW("Could not get primary display: %s", SDL_GetError());
+        return false;
+    }
+
+    bool ok = SDL_GetDisplayUsableBounds(display, &rect);
+    if (!ok) {
         LOGW("Could not get display usable bounds: %s", SDL_GetError());
         return false;
     }
@@ -112,7 +110,10 @@ is_optimal_size(struct sc_size current_size, struct sc_size content_size)
 {
     // The size is optimal if we can recompute one dimension of the current
     // size from the other
-    return current_size.height == current_size.width * content_size.height / content_size.width || current_size.width == current_size.height * content_size.width / content_size.height;
+    return current_size.height == (uint32_t) current_size.width
+                                * content_size.height / content_size.width
+        || current_size.width == (uint32_t) current_size.height
+                               * content_size.width / content_size.height;
 }
 
 // return the optimal size of the window, with the following constraints:
@@ -150,17 +151,17 @@ get_optimal_size(struct sc_size current_size, struct sc_size content_size,
         return window_size;
     }
 
-    bool keep_width = content_size.width * window_size.height > content_size.height * window_size.width;
-    if (keep_width)
-    {
+    bool keep_width = (uint32_t) content_size.width * window_size.height
+                    > (uint32_t) content_size.height * window_size.width;
+    if (keep_width) {
         // remove black borders on top and bottom
-        window_size.height = content_size.height * window_size.width / content_size.width;
-    }
-    else
-    {
+        window_size.height = (uint32_t) content_size.height * window_size.width
+                           / content_size.width;
+    } else {
         // remove black borders on left and right (or none at all if it already
         // fits)
-        window_size.width = content_size.width * window_size.height / content_size.height;
+        window_size.width = (uint32_t) content_size.width * window_size.height
+                          / content_size.height;
     }
 
     return window_size;
@@ -201,10 +202,16 @@ get_initial_optimal_size(struct sc_size content_size, uint16_t req_width,
     return window_size;
 }
 
+static inline void
+sc_screen_track_resize(struct sc_screen *screen, struct sc_size size) {
+    LOGV("Track resize: %" PRIu16 "x%" PRIu16, size.width, size.height);
+    screen->resize_tracker.time = sc_tick_now();
+    screen->resize_tracker.size = size;
+}
+
 static inline bool
 sc_screen_is_relative_mode(struct sc_screen *screen)
 {
-    // screen->im.mp may be NULL if --no-control
     return screen->im.mp && screen->im.mp->relative_mode;
 }
 
@@ -218,68 +225,92 @@ sc_screen_get_panel_width_scaled(struct sc_screen *screen)
     }
     int ww, wh, dw, dh;
     SDL_GetWindowSize(screen->window, &ww, &wh);
-    SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
+    SDL_GetWindowSizeInPixels(screen->window, &dw, &dh);
     float hidpi_scale = (float)dw / ww;
     return (int)(PANEL_WIDTH * hidpi_scale);
 }
 
 static void
-sc_screen_update_content_rect(struct sc_screen *screen)
-{
-    assert(screen->video);
-
-    int dw;
-    int dh;
-    SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
-
-    struct sc_size content_size = screen->content_size;
-    // The drawable size is the window size * the HiDPI scale
-    struct sc_size drawable_size = {dw, dh};
-
-    SDL_Rect *rect = &screen->rect;
-
-    // Get HiDPI-scaled panel width
-    int panel_width = sc_screen_get_panel_width_scaled(screen);
-
-    // Calculate the effective drawable size (excluding panel)
-    int effective_width = drawable_size.width - panel_width;
-
-    // Create a temporary size for layout calculation
-    struct sc_size layout_size = {effective_width, drawable_size.height};
-
-    if (is_optimal_size(layout_size, content_size))
-    {
-        // Video fits perfectly in the available space
-        rect->w = effective_width;
-        rect->h = drawable_size.height;
-        // Center the combined (video + panel) area
-        rect->x = (drawable_size.width - effective_width - panel_width) / 2;
+compute_content_rect(struct sc_size window_size, struct sc_size content_size,
+                     bool is_icon, enum sc_render_fit render_fit,
+                     SDL_FRect *rect) {
+    if (is_icon) {
+        if (content_size.width <= window_size.width
+                && content_size.height <= window_size.height) {
+            // Center without upscaling
+            rect->x = (window_size.width - content_size.width) / 2.f;
+            rect->y = (window_size.height - content_size.height) / 2.f;
+            rect->w = content_size.width;
+            rect->h = content_size.height;
+            return;
+        }
+    } else if (render_fit == SC_RENDER_FIT_UNSCALED) {
+        // Cast to float first because input sizes are unsigned
+        float x = ((float) window_size.width - content_size.width) / 2.f;
+        float y = ((float) window_size.height - content_size.height) / 2.f;
+        rect->x = MAX(0, x);
+        rect->y = MAX(0, y);
+        rect->w = content_size.width;
+        rect->h = content_size.height;
+        return;
+    } else if (render_fit == SC_RENDER_FIT_STRETCHED) {
+        rect->x = 0;
         rect->y = 0;
+        rect->w = window_size.width;
+        rect->h = window_size.height;
         return;
     }
 
-    bool keep_width = content_size.width * layout_size.height > content_size.height * layout_size.width;
-    if (keep_width)
-    {
-        // Video width fills the effective width, scale height proportionally
-        rect->w = effective_width;
-        rect->h = effective_width * content_size.height / content_size.width;
+    assert(is_icon || render_fit == SC_RENDER_FIT_LETTERBOX);
 
-        // Center the combined area horizontally and video vertically
-        rect->x = (drawable_size.width - effective_width - panel_width) / 2;
-        rect->y = (drawable_size.height - rect->h) / 2;
-    }
-    else
-    {
-        // Video height fills the drawable height, scale width proportionally
-        rect->h = drawable_size.height;
-        rect->w = drawable_size.height * content_size.width / content_size.height;
-
-        // Center the combined (video + panel) area
-        int total_width = rect->w + panel_width;
-        rect->x = (drawable_size.width - total_width) / 2;
+    if (is_optimal_size(window_size, content_size)) {
+        rect->x = 0;
         rect->y = 0;
+        rect->w = window_size.width;
+        rect->h = window_size.height;
+        return;
     }
+
+    bool keep_width = (uint32_t) content_size.width * window_size.height
+                    > (uint32_t) content_size.height * window_size.width;
+    if (keep_width) {
+        rect->x = 0;
+        rect->w = window_size.width;
+        rect->h = (float) window_size.width * content_size.height
+                                            / content_size.width;
+        rect->y = (window_size.height - rect->h) / 2.f;
+    } else {
+        rect->y = 0;
+        rect->h = window_size.height;
+        rect->w = (float) window_size.height * content_size.width
+                                             / content_size.height;
+        rect->x = (window_size.width - rect->w) / 2.f;
+    }
+}
+
+static void
+sc_screen_update_content_rect(struct sc_screen *screen) {
+    bool is_icon = !screen->video || screen->disconnected;
+
+    // Get window size in LOGICAL points (from SDL_GetWindowSize)
+    // SDL3 rendering uses physical pixels, so we need to convert
+    struct sc_size window_size = sc_sdl_get_window_size(screen->window);
+
+    // LinkAndroid: Subtract panel width from available window area
+    // The panel width is in physical pixels, convert to logical points
+    int panel_width_px = sc_screen_get_panel_width_scaled(screen);
+    float scale = SDL_GetWindowPixelDensity(screen->window);
+    if (scale == 0) {
+        scale = 1;
+    }
+    // Convert physical pixel panel width to logical point equivalent
+    int panel_width_pt = (int)(panel_width_px / scale);
+    if (panel_width_pt > 0 && window_size.width > (uint32_t)panel_width_pt) {
+        window_size.width -= panel_width_pt;
+    }
+
+    compute_content_rect(window_size, screen->content_size, is_icon,
+                         screen->render_fit, &screen->rect);
 }
 
 // render the texture to the renderer
@@ -287,9 +318,10 @@ sc_screen_update_content_rect(struct sc_screen *screen)
 // Set the update_content_rect flag if the window or content size may have
 // changed, so that the content rectangle is recomputed
 static void
-sc_screen_render(struct sc_screen *screen, bool update_content_rect)
-{
-    assert(screen->video);
+sc_screen_render(struct sc_screen *screen, bool update_content_rect) {
+    if (!screen->window_shown) {
+        return;
+    }
 
     if (update_content_rect || screen->panel_layout_dirty)
     {
@@ -297,21 +329,72 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect)
         sc_screen_update_content_rect(screen);
     }
 
-    enum sc_display_result res =
-        sc_display_render(&screen->display, &screen->rect, screen->orientation);
-    (void)res; // any error already logged
+    SDL_Renderer *renderer = screen->renderer;
+    struct sc_screen_bg_color bg = screen->bg;
+    SDL_SetRenderDrawColor(renderer, bg.r, bg.g, bg.b, 0);
+    sc_sdl_render_clear(renderer);
 
-    // Render panel if visible
+    SDL_Texture *texture = screen->tex.texture;
+    if (texture) {
+        float scale = SDL_GetWindowPixelDensity(screen->window);
+        if (scale == 0) {
+            LOGE("Cannot get scale value: %s", SDL_GetError());
+            scale = 1;
+        }
+
+        SDL_FRect geometry = {
+            .x = screen->rect.x * scale,
+            .y = screen->rect.y * scale,
+            .w = screen->rect.w * scale,
+            .h = screen->rect.h * scale,
+        };
+        enum sc_orientation orientation = screen->orientation;
+
+        bool ok = false;
+        if (orientation == SC_ORIENTATION_0) {
+            geometry.x = (int32_t) geometry.x;
+            geometry.y = (int32_t) geometry.y;
+            ok = SDL_RenderTexture(renderer, texture, NULL, &geometry);
+        } else {
+            unsigned cw_rotation = sc_orientation_get_rotation(orientation);
+            double angle = 90 * cw_rotation;
+
+            SDL_FRect *dstrect = NULL;
+            SDL_FRect rect;
+            if (sc_orientation_is_swap(orientation)) {
+                rect.x = geometry.x + (geometry.w - geometry.h) / 2.f;
+                rect.y = geometry.y + (geometry.h - geometry.w) / 2.f;
+                rect.w = geometry.h;
+                rect.h = geometry.w;
+                dstrect = &rect;
+            } else {
+                dstrect = &geometry;
+            }
+
+            SDL_FlipMode flip = sc_orientation_is_mirror(orientation)
+                                  ? SDL_FLIP_HORIZONTAL : 0;
+
+            dstrect->x = (int32_t) dstrect->x;
+            dstrect->y = (int32_t) dstrect->y;
+            ok = SDL_RenderTextureRotated(renderer, texture, NULL, dstrect,
+                                          angle, NULL, flip);
+        }
+
+        if (!ok) {
+            LOGE("Could not render texture: %s", SDL_GetError());
+        }
+    }
+
+    // LinkAndroid: Render panel if visible
     if (screen->panel.visible && screen->panel.button_count > 0)
     {
         sc_screen_render_panel(screen);
     }
 
-    // Present the final rendered frame (after all overlays)
-    SDL_RenderPresent(screen->display.renderer);
+    sc_sdl_render_present(renderer);
 
-    // LinkAndroid: Send ready event after the first frame is completely rendered and presented
-    if (!screen->ready_event_sent && screen->has_frame && g_websocket_client)
+    // LinkAndroid: Send ready event after the first frame is completely rendered
+    if (!screen->ready_event_sent && texture && g_websocket_client)
     {
         const char *ready_event = "{\"type\":\"ready\"}";
         if (la_websocket_client_send(g_websocket_client, ready_event))
@@ -322,31 +405,23 @@ sc_screen_render(struct sc_screen *screen, bool update_content_rect)
     }
 }
 
-#ifdef HAVE_SDL2_IMAGE
-// Load icon for a panel button (on demand, cached in button struct)
+#ifdef HAVE_SDL3_IMAGE
 static bool
 sc_screen_load_button_icon(struct sc_screen *screen, struct sc_panel_button *button)
 {
-    // If already loaded, return success
     if (button->icon_texture)
     {
-        return true;
+        return true; // Already loaded
     }
-    
-    // No icon name specified
-    if (button->icon[0] == '\0')
+
+    if (!screen->icon_root_path || button->icon[0] == '\0')
     {
         return false;
     }
-    
-    // No icon root path available
-    if (!screen->icon_root_path)
-    {
-        return false;
-    }
-    
-    // Construct full icon path: <icon_root>/<icon_name>.png
-    size_t path_len = strlen(screen->icon_root_path) + strlen(button->icon) + strlen("/.png") + 1;
+
+    // Build the icon path from icon_root_path
+    // +1 for '/', +4 for '.png', +1 for '\0' = +6
+    size_t path_len = strlen(screen->icon_root_path) + strlen(button->icon) + 6;
     char *icon_path = malloc(path_len);
     if (!icon_path)
     {
@@ -354,140 +429,128 @@ sc_screen_load_button_icon(struct sc_screen *screen, struct sc_panel_button *but
         return false;
     }
     snprintf(icon_path, path_len, "%s/%s.png", screen->icon_root_path, button->icon);
-    
-    // Load image using SDL_image
-    SDL_Surface *surface = IMG_Load(icon_path);
+
+    SDL_Surface *icon_surface = IMG_Load(icon_path);
     free(icon_path);
-    
-    if (!surface)
+    if (!icon_surface)
     {
-        LOGW("Failed to load icon '%s.png': %s", button->icon, IMG_GetError());
+        LOGW("Failed to load icon '%s.png': %s", button->icon, SDL_GetError());
         return false;
     }
-    
-    // Create texture from surface
-    SDL_Renderer *renderer = screen->display.renderer;
-    if (!renderer)
+
+    SDL_Texture *icon_texture = SDL_CreateTextureFromSurface(screen->renderer, icon_surface);
+    SDL_DestroySurface(icon_surface);
+    if (!icon_texture)
     {
-        SDL_FreeSurface(surface);
+        LOGW("Failed to create texture for icon '%s'", button->icon);
         return false;
     }
-    
-    button->icon_texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_FreeSurface(surface);
-    
-    if (!button->icon_texture)
-    {
-        LOGW("Failed to create texture for icon '%s.png': %s", button->icon, SDL_GetError());
-        return false;
-    }
-    
-    LOGD("Loaded icon for button '%s': %s.png", button->id, button->icon);
+
+    float icon_w = 0, icon_h = 0;
+    SDL_GetTextureSize(icon_texture, &icon_w, &icon_h);
+    LOGD("Loaded icon '%s.png': %.0fx%.0f", button->icon, icon_w, icon_h);
+
+    button->icon_texture = icon_texture;
     return true;
 }
-#endif // HAVE_SDL2_IMAGE
+#endif
 
 // Render the right-side panel with buttons
 static void
 sc_screen_render_panel(struct sc_screen *screen)
 {
-    SDL_Renderer *renderer = screen->display.renderer;
+    SDL_Renderer *renderer = screen->renderer;
     if (!renderer)
     {
-        LOGW("Panel render: No renderer available");
         return;
     }
 
-    // LOGI("Rendering panel: buttons=%d, visible=%d, font=%p",
-    //      screen->panel.button_count, screen->panel.visible, screen->panel_font);
+    // SDL3 rendering uses physical pixel coordinates (no logical presentation set)
+    // We need to multiply logical coordinates by the pixel density scale
+    float scale = SDL_GetWindowPixelDensity(screen->window);
+    if (scale == 0) {
+        scale = 1;
+    }
 
-    int ww, wh, dw, dh;
-    SDL_GetWindowSize(screen->window, &ww, &wh);
-    SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
-    
-    // Calculate HiDPI scale factor
-    float hidpi_scale = (float)dw / ww;
+    int dw, dh;
+    SDL_GetWindowSizeInPixels(screen->window, &dw, &dh);
 
-    // Get HiDPI-scaled panel dimensions
     int panel_w = sc_screen_get_panel_width_scaled(screen);
+
+    // Convert logical rect positions to physical pixels
+    float content_right = (screen->rect.x + screen->rect.w) * scale;
+
+    int panel_x = (int)content_right;
+    int panel_y = 0;
+    int panel_h = dh;
+
+    // Compute button dimensions in physical pixels
+    float hidpi_scale = scale;
     int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
     int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
     int start_y = (int)(PANEL_START_Y * hidpi_scale);
 
-    // Calculate panel position (right side of video rect)
-    int panel_x = screen->rect.x + screen->rect.w;
-    int panel_y = 0;
-    int panel_h = dh;
-
-    // Draw panel background
-    SDL_SetRenderDrawColor(renderer, 45, 45, 45, 255); // Dark gray #2D2D2D
-    SDL_Rect panel_rect = {panel_x, panel_y, panel_w, panel_h};
+    SDL_SetRenderDrawColor(renderer, 45, 45, 45, 255);
+    SDL_FRect panel_rect = {panel_x, panel_y, panel_w, panel_h};
     SDL_RenderFillRect(renderer, &panel_rect);
 
-    // Button layout
     int button_width = panel_w - 2 * button_margin;
+
+    // Convert the logical content top to physical pixels for button Y positions
+    float content_top = screen->rect.y * scale;
 
     for (int i = 0; i < screen->panel.button_count; i++)
     {
         int btn_x = panel_x + button_margin;
-        int btn_y = screen->rect.y + start_y + i * (button_height + button_margin);
+        int btn_y = (int)content_top + start_y + i * (button_height + button_margin);
 
-        // Draw button background (rounded rectangle)
-        // For simplicity, draw a regular rectangle first
-        // TODO: Add rounded corners using OpenGL shader
-        // Use different color if button is hovered
         bool is_hovered = (i == screen->panel.hovered_button_index);
         if (is_hovered) {
-            SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255); // Lighter bg on hover #505050
+            SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
         } else {
-            SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255); // Normal bg #3C3C3C
+            SDL_SetRenderDrawColor(renderer, 60, 60, 60, 255);
         }
-        SDL_Rect button_rect = {btn_x, btn_y, button_width, button_height};
+        SDL_FRect button_rect = {btn_x, btn_y, button_width, button_height};
         SDL_RenderFillRect(renderer, &button_rect);
 
-        // Render button content: icon or text (icon takes precedence)
         bool rendered = false;
-        
-#ifdef HAVE_SDL2_IMAGE
-        // Try to render icon if specified
+
+#ifdef HAVE_SDL3_IMAGE
         if (screen->panel.buttons[i].icon[0] != '\0')
         {
-            // Load icon on demand (cached after first load)
             if (sc_screen_load_button_icon(screen, &screen->panel.buttons[i]))
             {
                 SDL_Texture *icon_texture = screen->panel.buttons[i].icon_texture;
                 if (icon_texture)
                 {
-                    // Get icon dimensions
-                    int icon_w, icon_h;
-                    SDL_QueryTexture(icon_texture, NULL, NULL, &icon_w, &icon_h);
-                    
-                    // Scale icon to fit button (same size as font height)
-                    int target_size = button_height - 10 * (int)hidpi_scale; // Leave some margin
-                    float scale = (float)target_size / (icon_w > icon_h ? icon_w : icon_h);
-                    int scaled_w = (int)(icon_w * scale);
-                    int scaled_h = (int)(icon_h * scale);
-                    
-                    // Center icon in button
+                    float icon_w_f, icon_h_f;
+                    SDL_GetTextureSize(icon_texture, &icon_w_f, &icon_h_f);
+
+                    int target_size = button_height - 10 * (int)hidpi_scale;
+                    float scale = (float)target_size / (icon_w_f > icon_h_f ? icon_w_f : icon_h_f);
+                    int scaled_w = (int)(icon_w_f * scale);
+                    int scaled_h = (int)(icon_h_f * scale);
+
                     int icon_x = btn_x + (button_width - scaled_w) / 2;
                     int icon_y = btn_y + (button_height - scaled_h) / 2;
-                    
-                    SDL_Rect icon_rect = {icon_x, icon_y, scaled_w, scaled_h};
-                    SDL_RenderCopy(renderer, icon_texture, NULL, &icon_rect);
+
+                    SDL_FRect icon_rect = {(float)icon_x, (float)icon_y, (float)scaled_w, (float)scaled_h};
+                    SDL_RenderTexture(renderer, icon_texture, NULL, &icon_rect);
                     rendered = true;
                 }
             }
         }
-#endif // HAVE_SDL2_IMAGE
-        
-        // If icon not rendered, try to render text
-#ifdef HAVE_SDL2_TTF
+#endif
+
+#ifdef HAVE_SDL3_TTF
         if (!rendered && screen->panel_font && screen->panel.buttons[i].text[0] != '\0')
         {
-            SDL_Color text_color = {255, 255, 255, 255}; // White text
-            SDL_Surface *text_surface = TTF_RenderUTF8_Blended(
+            SDL_Color text_color = {255, 255, 255, 255};
+            const char *btn_text = screen->panel.buttons[i].text;
+            SDL_Surface *text_surface = TTF_RenderText_Blended(
                 screen->panel_font,
-                screen->panel.buttons[i].text,
+                btn_text,
+                strlen(btn_text),
                 text_color);
 
             if (text_surface)
@@ -495,40 +558,55 @@ sc_screen_render_panel(struct sc_screen *screen)
                 SDL_Texture *text_texture = SDL_CreateTextureFromSurface(renderer, text_surface);
                 if (text_texture)
                 {
-                    // Center text in button
-                    int text_w = text_surface->w;
-                    int text_h = text_surface->h;
-                    int text_x = btn_x + (button_width - text_w) / 2;
-                    int text_y = btn_y + (button_height - text_h) / 2;
+                    float text_w = 0, text_h = 0;
+                    SDL_GetTextureSize(text_texture, &text_w, &text_h);
+                    int text_x = btn_x + (button_width - (int)text_w) / 2;
+                    int text_y = btn_y + (button_height - (int)text_h) / 2;
 
-                    SDL_Rect text_rect = {text_x, text_y, text_w, text_h};
-                    SDL_RenderCopy(renderer, text_texture, NULL, &text_rect);
+                    SDL_FRect text_rect = {(float)text_x, (float)text_y, text_w, text_h};
+                    SDL_RenderTexture(renderer, text_texture, NULL, &text_rect);
                     SDL_DestroyTexture(text_texture);
                     rendered = true;
                 }
-                SDL_FreeSurface(text_surface);
+                SDL_DestroySurface(text_surface);
             }
         }
-#else
-        // Without SDL2_ttf, just show button ID as fallback
-        (void)screen->panel.buttons[i].text; // Suppress unused warning
 #endif
+        (void)rendered;
     }
-
-    // NOTE: Do NOT call SDL_RenderPresent here!
-    // The screen render function (sc_screen_render) will handle presenting.
-    // This allows us to render overlays (like the panel) before presenting.
 }
 
 static void
-sc_screen_render_novideo(struct sc_screen *screen)
-{
-    enum sc_display_result res =
-        sc_display_render(&screen->display, NULL, SC_ORIENTATION_0);
-    (void)res; // any error already logged
+sc_screen_on_resize(struct sc_screen *screen, const SDL_WindowEvent *event) {
+    if (!screen->window_shown) {
+        return;
+    }
 
-    // Present the frame
-    SDL_RenderPresent(screen->display.renderer);
+    if (event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+        sc_screen_render(screen, true);
+    } else {
+        assert(event->type == SDL_EVENT_WINDOW_RESIZED);
+        if (screen->flex_display) {
+            assert(!(event->data1 & ~0xFFFF));
+            assert(!(event->data2 & ~0xFFFF));
+            uint16_t width = event->data1;
+            uint16_t height = event->data2;
+
+            struct sc_resize_tracker *tracker = &screen->resize_tracker;
+            if (tracker->time
+                    && sc_tick_now() >= tracker->time + SC_TICK_FROM_MS(3000)) {
+                tracker->time = 0;
+            }
+            if (tracker->time && tracker->size.width == width
+                              && tracker->size.height == height) {
+                LOGV("Ignore local resize: %" PRIu16 "x%" PRIu16,
+                     width, height);
+                tracker->time = 0;
+            } else {
+                sc_controller_resize_display(screen->controller, width, height);
+            }
+        }
+    }
 }
 
 #if defined(__APPLE__) || defined(_WIN32)
@@ -536,56 +614,48 @@ sc_screen_render_novideo(struct sc_screen *screen)
 #endif
 
 #ifdef CONTINUOUS_RESIZING_WORKAROUND
-// On Windows and MacOS, resizing blocks the event loop, so resizing events are
-// not triggered. As a workaround, handle them in an event handler.
-//
-// <https://bugzilla.libsdl.org/show_bug.cgi?id=2077>
-// <https://stackoverflow.com/a/40693139/1987178>
-static int
-event_watcher(void *data, SDL_Event *event)
-{
+static bool
+event_watcher(void *data, SDL_Event *event) {
     struct sc_screen *screen = data;
-    assert(screen->video);
 
-    if (event->type == SDL_WINDOWEVENT && event->window.event == SDL_WINDOWEVENT_RESIZED)
-    {
-        // In practice, it seems to always be called from the same thread in
-        // that specific case. Anyway, it's just a workaround.
-        sc_screen_render(screen, true);
+    if (event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED
+            || event->type == SDL_EVENT_WINDOW_RESIZED) {
+        sc_screen_on_resize(screen, &event->window);
     }
-    return 0;
+
+    return true;
 }
 #endif
 
 static bool
 sc_screen_frame_sink_open(struct sc_frame_sink *sink,
-                          const AVCodecContext *ctx)
-{
+                          const AVCodecContext *ctx,
+                          const struct sc_stream_session *session) {
     assert(ctx->pix_fmt == AV_PIX_FMT_YUV420P);
-    (void)ctx;
 
     struct sc_screen *screen = DOWNCAST(sink);
-
-    if (ctx->width <= 0 || ctx->width > 0xFFFF || ctx->height <= 0 || ctx->height > 0xFFFF)
-    {
-        LOGE("Invalid video size: %dx%d", ctx->width, ctx->height);
-        return false;
-    }
-
-    assert(ctx->width > 0 && ctx->width <= 0xFFFF);
-    assert(ctx->height > 0 && ctx->height <= 0xFFFF);
-    // screen->frame_size is never used before the event is pushed, and the
-    // event acts as a memory barrier so it is safe without mutex
-    screen->frame_size.width = ctx->width;
-    screen->frame_size.height = ctx->height;
 
     // LinkAndroid: Set device size for WebSocket event forwarding
     sc_input_manager_set_device_size(ctx->width, ctx->height);
 
-    // Post the event on the UI thread (the texture must be created from there)
-    bool ok = sc_push_event(SC_EVENT_SCREEN_INIT_SIZE);
-    if (!ok)
-    {
+    assert(session->video.width && session->video.height);
+    if (session->video.width > 0xFFFF || session->video.height > 0xFFFF) {
+        LOGE("Size too large: %" PRIu32 "x%" PRIu32, session->video.width,
+                                                     session->video.height);
+        return false;
+    }
+
+    struct sc_size *size = malloc(sizeof(*size));
+    if (!size) {
+        LOG_OOM();
+        return false;
+    }
+    size->width = session->video.width;
+    size->height = session->video.height;
+
+    bool ok = sc_push_event_with_data(SC_EVENT_OPEN_WINDOW, size);
+    if (!ok) {
+        free(size);
         return false;
     }
 
@@ -593,7 +663,6 @@ sc_screen_frame_sink_open(struct sc_frame_sink *sink,
     screen->open = true;
 #endif
 
-    // nothing to do, the screen is already open on the main thread
     return true;
 }
 
@@ -605,32 +674,28 @@ sc_screen_frame_sink_close(struct sc_frame_sink *sink)
 #ifndef NDEBUG
     screen->open = false;
 #endif
-
-    // nothing to do, the screen lifecycle is not managed by the frame producer
 }
 
 static bool
 sc_screen_frame_sink_push(struct sc_frame_sink *sink, const AVFrame *frame)
 {
     struct sc_screen *screen = DOWNCAST(sink);
-    assert(screen->video);
 
-    bool previous_skipped;
-    bool ok = sc_frame_buffer_push(&screen->fb, frame, &previous_skipped);
-    if (!ok)
-    {
+    sc_mutex_lock(&screen->mutex);
+    bool previous_skipped = sc_frame_buffer_has_frame(&screen->fb);
+    bool ok = sc_frame_buffer_push(&screen->fb, frame);
+    screen->prevent_auto_resize = screen->current_session.video.client_resized;
+    sc_mutex_unlock(&screen->mutex);
+    if (!ok) {
         return false;
     }
 
     if (previous_skipped)
     {
         sc_fps_counter_add_skipped_frame(&screen->fps_counter);
-        // The SC_EVENT_NEW_FRAME triggered for the previous frame will consume
-        // this new frame instead
     }
     else
     {
-        // Post the event on the UI thread
         bool ok = sc_push_event(SC_EVENT_NEW_FRAME);
         if (!ok)
         {
@@ -641,37 +706,49 @@ sc_screen_frame_sink_push(struct sc_frame_sink *sink, const AVFrame *frame)
     return true;
 }
 
-bool sc_screen_init(struct sc_screen *screen,
-                    const struct sc_screen_params *params)
-{
+static bool
+sc_screen_frame_sink_push_session(struct sc_frame_sink *sink,
+                                  const struct sc_stream_session *session) {
+    struct sc_screen *screen = DOWNCAST(sink);
+    screen->current_session = *session;
+    return true;
+}
+
+bool
+sc_screen_init(struct sc_screen *screen,
+               const struct sc_screen_params *params) {
+    screen->controller = params->controller;
+
     screen->resize_pending = false;
-    screen->has_frame = false;
-    screen->fullscreen = false;
-    screen->maximized = false;
-    screen->minimized = false;
+    screen->window_shown = false;
     screen->paused = false;
     screen->resume_frame = NULL;
     screen->orientation = SC_ORIENTATION_0;
-    screen->ready_event_sent = false; // LinkAndroid: Initialize ready event flag
+    screen->ready_event_sent = false;
+    screen->disconnected = false;
+    screen->disconnect_started = false;
 
     screen->video = params->video;
+    screen->camera = params->camera;
+    screen->window_aspect_ratio_lock = params->window_aspect_ratio_lock;
+    screen->render_fit = params->render_fit;
+    screen->flex_display = params->flex_display;
+
+    screen->bg.r = (params->background_color >> 16) & 0xFF;
+    screen->bg.g = (params->background_color >> 8) & 0xFF;
+    screen->bg.b = params->background_color & 0xFF;
 
     // Initialize panel configuration
     screen->panel.button_count = 0;
-    // Panel visible at startup if --linkandroid-panel-show was specified
     screen->panel.visible = params->panel_show;
     screen->panel_layout_dirty = false;
     screen->panel_enabled = params->panel_show;
-    screen->panel.hovered_button_index = -1; // No button hovered initially
+    screen->panel.hovered_button_index = -1;
     memset(screen->panel.buttons, 0, sizeof(screen->panel.buttons));
     screen->panel_font = NULL;
 
-    // Note: Font loading will be done after window creation to get HiDPI scale
-
-
-    // Initialize cursors for panel button hover
-    screen->hand_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
-    screen->arrow_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    screen->hand_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
+    screen->arrow_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
     screen->cursor_is_hand = false;
     screen->mouse_button_pressed_outside_panel = false;
 
@@ -686,16 +763,25 @@ bool sc_screen_init(struct sc_screen *screen,
     screen->req.height = params->window_height;
     screen->req.fullscreen = params->fullscreen;
     screen->req.start_fps_counter = params->start_fps_counter;
-    screen->req.hide_window = params->hide_window; // LinkAndroid
+    screen->req.hide_window = params->hide_window;
 
-    bool ok = sc_frame_buffer_init(&screen->fb);
-    if (!ok)
-    {
+    screen->prevent_auto_resize = false;
+
+    screen->resize_tracker.time = 0;
+    screen->resize_tracker.size.width = 0;
+    screen->resize_tracker.size.height = 0;
+
+    bool ok = sc_mutex_init(&screen->mutex);
+    if (!ok) {
         return false;
     }
 
-    if (!sc_fps_counter_init(&screen->fps_counter))
-    {
+    ok = sc_frame_buffer_init(&screen->fb);
+    if (!ok) {
+        goto error_destroy_mutex;
+    }
+
+    if (!sc_fps_counter_init(&screen->fps_counter)) {
         goto error_destroy_frame_buffer;
     }
 
@@ -709,7 +795,7 @@ bool sc_screen_init(struct sc_screen *screen,
         }
     }
 
-    uint32_t window_flags = SDL_WINDOW_ALLOW_HIGHDPI;
+    uint32_t window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN;
     if (params->always_on_top)
     {
         window_flags |= SDL_WINDOW_ALWAYS_ON_TOP;
@@ -720,8 +806,7 @@ bool sc_screen_init(struct sc_screen *screen,
     }
     if (params->video)
     {
-        // The window will be shown on first frame
-        window_flags |= SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE;
+        window_flags |= SDL_WINDOW_RESIZABLE;
     }
 
     const char *title = params->window_title;
@@ -748,64 +833,94 @@ bool sc_screen_init(struct sc_screen *screen,
         height = params->window_height;
     }
 
-    // The window will be positioned and sized on first video frame
-    screen->window = SDL_CreateWindow(title, x, y, width, height, window_flags);
-    if (!screen->window)
-    {
+    screen->window =
+        sc_sdl_create_window(title, x, y, width, height, window_flags);
+    if (!screen->window) {
         LOGE("Could not create window: %s", SDL_GetError());
         goto error_destroy_fps_counter;
     }
 
-    SDL_Surface *icon = scrcpy_icon_load();
-    if (icon)
-    {
-        SDL_SetWindowIcon(screen->window, icon);
+    screen->renderer = SDL_CreateRenderer(screen->window, NULL);
+    if (!screen->renderer) {
+        LOGE("Could not create renderer: %s", SDL_GetError());
+        goto error_destroy_window;
     }
-    else if (params->video)
-    {
-        // just a warning
-        LOGW("Could not load icon");
+
+#ifdef SC_DISPLAY_FORCE_OPENGL_CORE_PROFILE
+    screen->gl_context = NULL;
+
+    const char *renderer_name = SDL_GetRendererName(screen->renderer);
+    bool use_opengl = renderer_name && !strncmp(renderer_name, "opengl", 6);
+    if (use_opengl) {
+        bool ok = SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
+                                      SDL_GL_CONTEXT_PROFILE_CORE);
+        if (!ok) {
+            LOGW("Could not set a GL Core Profile Context");
+        }
+
+        LOGD("Creating OpenGL Core Profile context");
+        screen->gl_context = SDL_GL_CreateContext(screen->window);
+        if (!screen->gl_context) {
+            LOGE("Could not create OpenGL context: %s", SDL_GetError());
+            goto error_destroy_renderer;
+        }
     }
-    else
-    {
-        // without video, the icon is used as window content, it must be present
+#endif
+
+    bool mipmaps = params->video;
+    ok = sc_texture_init(&screen->tex, screen->renderer, mipmaps);
+    if (!ok) {
+        goto error_destroy_renderer;
+    }
+
+    ok = SDL_StartTextInput(screen->window);
+    if (!ok) {
+        LOGE("Could not enable text input: %s", SDL_GetError());
+        goto error_destroy_texture;
+    }
+
+    SDL_Surface *icon = sc_icon_load(SC_ICON_FILENAME_SCRCPY);
+    if (icon) {
+        if (!SDL_SetWindowIcon(screen->window, icon)) {
+            LOGW("Could not set window icon: %s", SDL_GetError());
+        }
+
+        if (!params->video) {
+            screen->content_size.width = icon->w;
+            screen->content_size.height = icon->h;
+            ok = sc_texture_set_from_surface(&screen->tex, icon);
+            if (!ok) {
+                LOGE("Could not set icon: %s", SDL_GetError());
+            }
+        }
+
+        sc_icon_destroy(icon);
+    } else {
         LOGE("Could not load icon");
-        goto error_destroy_window;
+
+        if (!params->video) {
+            screen->content_size.width = 256;
+            screen->content_size.height = 256;
+        }
     }
 
-    SDL_Surface *icon_novideo = params->video ? NULL : icon;
-    bool mipmaps = params->video && params->mipmaps;
-    ok = sc_display_init(&screen->display, screen->window, icon_novideo,
-                         mipmaps);
-    if (icon)
+#ifdef HAVE_SDL3_TTF
+    if (!TTF_Init())
     {
-        scrcpy_icon_destroy(icon);
-    }
-    if (!ok)
-    {
-        goto error_destroy_window;
-    }
-
-#ifdef HAVE_SDL2_TTF
-    // Load font after window creation to get HiDPI scale
-    if (TTF_Init() == -1)
-    {
-        LOGW("Could not initialize SDL_ttf: %s", TTF_GetError());
+        LOGW("Could not initialize SDL_ttf: %s", SDL_GetError());
     }
     else
     {
-        // Get HiDPI scale factor
         int ww, wh, dw, dh;
         SDL_GetWindowSize(screen->window, &ww, &wh);
-        SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
+        SDL_GetWindowSizeInPixels(screen->window, &dw, &dh);
         float hidpi_scale = (float)dw / ww;
-        int scaled_font_size = (int)(PANEL_FONT_SIZE * hidpi_scale);
-        
-        LOGI("Font size: base=%d, hidpi_scale=%.2f, scaled=%d", 
+        float scaled_font_size = PANEL_FONT_SIZE * hidpi_scale;
+
+        LOGI("Font size: base=%d, hidpi_scale=%.2f, scaled=%.1f",
              PANEL_FONT_SIZE, hidpi_scale, scaled_font_size);
 
-        // First try environment variable
-        char *env_font_path = getenv("SCRCPY_FONT_PATH");
+        const char *env_font_path = getenv("SCRCPY_FONT_PATH");
         if (env_font_path)
         {
             screen->panel_font = TTF_OpenFont(env_font_path, scaled_font_size);
@@ -814,23 +929,21 @@ bool sc_screen_init(struct sc_screen *screen,
                 LOGI("Loaded custom font from SCRCPY_FONT_PATH: %s", env_font_path);
             }
         }
-        
+
         if (!screen->panel_font)
         {
-            // Try to load the custom font from multiple possible locations
             const char *font_search_paths[] = {
-                NULL, // Will be set to base_path/data/font.ttf
-                "data/font.ttf", // Relative to current directory
-                "../share/scrcpy/font.ttf", // Relative to bin directory (Linux/macOS install)
+                NULL,
+                "data/font.ttf",
+                "../share/scrcpy/font.ttf",
                 NULL
             };
-        
-            char *base_path = SDL_GetBasePath();
+
+            const char *base_path = SDL_GetBasePath();
             char *base_font_path = NULL;
-        
+
             if (base_path)
             {
-                // Construct path to base_path/data/font.ttf
                 size_t path_len = strlen(base_path) + strlen("data/font.ttf") + 1;
                 base_font_path = malloc(path_len);
                 if (base_font_path)
@@ -839,8 +952,7 @@ bool sc_screen_init(struct sc_screen *screen,
                     font_search_paths[0] = base_font_path;
                 }
             }
-        
-            // Try each path
+
             for (int i = 0; font_search_paths[i] != NULL; i++)
             {
                 screen->panel_font = TTF_OpenFont(font_search_paths[i], scaled_font_size);
@@ -850,34 +962,28 @@ bool sc_screen_init(struct sc_screen *screen,
                     break;
                 }
             }
-        
-            // Cleanup
+
             if (base_font_path)
             {
                 free(base_font_path);
             }
             if (base_path)
             {
-                SDL_free(base_path);
+                SDL_free((void *)base_path);
             }
         }
 
-        // If custom font failed, try system fonts as fallback
         if (!screen->panel_font)
         {
-            // Try to load a system font that supports Unicode/Emoji
             const char *font_paths[] = {
-                // macOS fonts
                 "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
                 "/System/Library/Fonts/Helvetica.ttc",
                 "/System/Library/Fonts/PingFang.ttc",
                 "/System/Library/Fonts/SFNS.ttf",
-                // Linux fonts
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                 "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
                 "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
                 "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-                // Windows fonts
                 "C:\\Windows\\Fonts\\seguisym.ttf",
                 "C:\\Windows\\Fonts\\arial.ttf",
                 "C:\\Windows\\Fonts\\msyh.ttc",
@@ -902,7 +1008,6 @@ bool sc_screen_init(struct sc_screen *screen,
     }
 #endif
 
-    // Initialize icon root path for panel buttons
     screen->icon_root_path = NULL;
     char *env_icon_root = getenv("SCRCPY_ICON_ROOT_PATH");
     if (env_icon_root)
@@ -913,20 +1018,19 @@ bool sc_screen_init(struct sc_screen *screen,
             LOGI("Icon root path set from SCRCPY_ICON_ROOT_PATH: %s", screen->icon_root_path);
         }
     }
-    
+
     if (!screen->icon_root_path)
     {
-        // Try default paths
         const char *icon_search_paths[] = {
-            NULL, // Will be set to base_path/data
-            "app/data", // Relative to current directory
-            "../share/scrcpy", // Relative to bin directory (Linux/macOS install)
+            NULL,
+            "app/data",
+            "../share/scrcpy",
             NULL
         };
-    
-        char *base_path = SDL_GetBasePath();
+
+        const char *base_path = SDL_GetBasePath();
         char *base_icon_path = NULL;
-    
+
         if (base_path)
         {
             size_t path_len = strlen(base_path) + strlen("data") + 1;
@@ -937,11 +1041,9 @@ bool sc_screen_init(struct sc_screen *screen,
                 icon_search_paths[0] = base_icon_path;
             }
         }
-    
-        // Try each path
+
         for (int i = 0; icon_search_paths[i] != NULL; i++)
         {
-            // Check if path exists by trying to construct a test file path
             size_t test_path_len = strlen(icon_search_paths[i]) + strlen("/home.png") + 1;
             char *test_path = malloc(test_path_len);
             if (test_path)
@@ -961,7 +1063,7 @@ bool sc_screen_init(struct sc_screen *screen,
                 }
             }
         }
-    
+
         if (base_icon_path)
         {
             free(base_icon_path);
@@ -971,7 +1073,7 @@ bool sc_screen_init(struct sc_screen *screen,
             SDL_free(base_path);
         }
     }
-    
+
     if (!screen->icon_root_path)
     {
         LOGW("Icon root path not found, icon buttons will not be displayed");
@@ -981,7 +1083,7 @@ bool sc_screen_init(struct sc_screen *screen,
     if (!screen->frame)
     {
         LOG_OOM();
-        goto error_destroy_display;
+        goto error_destroy_texture;
     }
 
     struct sc_input_manager_params im_params = {
@@ -991,6 +1093,7 @@ bool sc_screen_init(struct sc_screen *screen,
         .kp = params->kp,
         .mp = params->mp,
         .gp = params->gp,
+        .camera = params->camera,
         .mouse_bindings = params->mouse_bindings,
         .legacy_paste = params->legacy_paste,
         .clipboard_autosync = params->clipboard_autosync,
@@ -999,20 +1102,25 @@ bool sc_screen_init(struct sc_screen *screen,
 
     sc_input_manager_init(&screen->im, &im_params);
 
-    // Initialize even if not used for simplicity
     sc_mouse_capture_init(&screen->mc, screen->window, params->shortcut_mods);
 
 #ifdef CONTINUOUS_RESIZING_WORKAROUND
-    if (screen->video)
-    {
-        SDL_AddEventWatch(event_watcher, screen);
+    if (screen->video) {
+        ok = SDL_AddEventWatch(event_watcher, screen);
+        if (!ok) {
+            LOGW("Could not add event watcher for continuous resizing: %s",
+                 SDL_GetError());
+        }
     }
 #endif
+
+    memset(&screen->current_session, 0, sizeof(screen->current_session));
 
     static const struct sc_frame_sink_ops ops = {
         .open = sc_screen_frame_sink_open,
         .close = sc_screen_frame_sink_close,
         .push = sc_screen_frame_sink_push,
+        .push_session = sc_screen_frame_sink_push_session,
     };
 
     screen->frame_sink.ops = &ops;
@@ -1021,22 +1129,34 @@ bool sc_screen_init(struct sc_screen *screen,
     screen->open = false;
 #endif
 
-    if (!screen->video && sc_screen_is_relative_mode(screen))
-    {
-        // Capture mouse immediately if video mirroring is disabled
-        sc_mouse_capture_set_active(&screen->mc, true);
+    if (!screen->video && !screen->req.hide_window) {
+        screen->window_shown = true;
+        sc_sdl_show_window(screen->window);
+
+        if (sc_screen_is_relative_mode(screen)) {
+            sc_mouse_capture_set_active(&screen->mc, true);
+        }
     }
 
     return true;
 
-error_destroy_display:
-    sc_display_destroy(&screen->display);
+error_destroy_texture:
+    sc_texture_destroy(&screen->tex);
+error_destroy_renderer:
+#ifdef SC_DISPLAY_FORCE_OPENGL_CORE_PROFILE
+    if (screen->gl_context) {
+        SDL_GL_DestroyContext(screen->gl_context);
+    }
+#endif
+    SDL_DestroyRenderer(screen->renderer);
 error_destroy_window:
     SDL_DestroyWindow(screen->window);
 error_destroy_fps_counter:
     sc_fps_counter_destroy(&screen->fps_counter);
 error_destroy_frame_buffer:
     sc_frame_buffer_destroy(&screen->fb);
+error_destroy_mutex:
+    sc_mutex_destroy(&screen->mutex);
 
     return false;
 }
@@ -1047,7 +1167,6 @@ sc_screen_show_initial_window(struct sc_screen *screen)
     // LinkAndroid: Don't show window if hide_window is requested
     if (screen->req.hide_window)
     {
-        // Skip showing the window, but still update content rect
         sc_screen_update_content_rect(screen);
         return;
     }
@@ -1058,20 +1177,36 @@ sc_screen_show_initial_window(struct sc_screen *screen)
     int y = screen->req.y != SC_WINDOW_POSITION_UNDEFINED
                 ? screen->req.y
                 : (int)SDL_WINDOWPOS_CENTERED;
+    struct sc_point position = {
+        .x = x,
+        .y = y,
+    };
 
     struct sc_size window_size =
         get_initial_optimal_size(screen->content_size, screen->req.width,
                                  screen->req.height);
 
-    // Add panel width to window size if panel is visible
-    // The panel width is in logical pixels (not HiDPI scaled)
+    // LinkAndroid: Add panel width to window size if panel is visible.
+    // We do this AFTER get_initial_optimal_size (which computes optimal
+    // size for the content only), so the content area remains at the
+    // optimal size and the panel is extra width. The window aspect ratio
+    // is NOT locked when the panel is visible (see set_aspect_ratio), so
+    // SDL won't fight this added width.
     if (screen->panel.visible)
     {
         window_size.width += PANEL_WIDTH;
     }
 
-    set_window_size(screen, window_size);
-    SDL_SetWindowPosition(screen->window, x, y);
+    if (screen->flex_display
+            && window_size.width == screen->content_size.width
+            && window_size.height == screen->content_size.height) {
+        sc_screen_track_resize(screen, window_size);
+    }
+
+    assert(is_windowed(screen));
+    set_aspect_ratio(screen, screen->content_size);
+    sc_sdl_set_window_size(screen->window, window_size);
+    sc_sdl_set_window_position(screen->window, position);
 
     if (screen->req.fullscreen)
     {
@@ -1083,13 +1218,15 @@ sc_screen_show_initial_window(struct sc_screen *screen)
         sc_fps_counter_start(&screen->fps_counter);
     }
 
-    SDL_ShowWindow(screen->window);
+    screen->window_shown = true;
+    sc_sdl_show_window(screen->window);
     sc_screen_update_content_rect(screen);
 }
 
-void sc_screen_hide_window(struct sc_screen *screen)
-{
-    SDL_HideWindow(screen->window);
+void
+sc_screen_hide_window(struct sc_screen *screen) {
+    sc_sdl_hide_window(screen->window);
+    screen->window_shown = false;
 }
 
 void sc_screen_raise_window(struct sc_screen *screen)
@@ -1108,13 +1245,25 @@ void sc_screen_set_always_on_top(struct sc_screen *screen, bool enable)
         LOGW("Cannot set always-on-top: window not initialized");
         return;
     }
-#if SDL_VERSION_ATLEAST(2, 0, 16)
-    SDL_SetWindowAlwaysOnTop(screen->window, enable ? SDL_TRUE : SDL_FALSE);
+    SDL_SetWindowAlwaysOnTop(screen->window, enable);
     LOGI("Window always-on-top: %s", enable ? "enabled" : "disabled");
-#else
-    (void) enable;
-    LOGW("SDL_SetWindowAlwaysOnTop requires SDL >= 2.0.16");
-#endif
+}
+
+// Called on the main thread to enlarge window for panel without squeezing content.
+// The window aspect ratio is NOT locked when panel is visible (see set_aspect_ratio),
+// so we only need to widen the window. compute_content_rect() will handle the
+// content aspect ratio inside the remaining space.
+static void
+task_enlarge_window_for_panel(void *userdata) {
+    struct sc_screen *screen = userdata;
+    if (!screen->window_shown || !screen->panel.visible || screen->panel.button_count == 0) {
+        return;
+    }
+    struct sc_size window_size = sc_sdl_get_window_size(screen->window);
+    if (window_size.width < screen->rect.w + PANEL_WIDTH) {
+        window_size.width += PANEL_WIDTH;
+        sc_sdl_set_window_size(screen->window, window_size);
+    }
 }
 
 void sc_screen_interrupt(struct sc_screen *screen)
@@ -1122,9 +1271,19 @@ void sc_screen_interrupt(struct sc_screen *screen)
     sc_fps_counter_interrupt(&screen->fps_counter);
 }
 
-void sc_screen_join(struct sc_screen *screen)
-{
+static void
+sc_screen_interrupt_disconnect(struct sc_screen *screen) {
+    if (screen->disconnect_started) {
+        sc_disconnect_interrupt(&screen->disconnect);
+    }
+}
+
+void
+sc_screen_join(struct sc_screen *screen) {
     sc_fps_counter_join(&screen->fps_counter);
+    if (screen->disconnect_started) {
+        sc_disconnect_join(&screen->disconnect);
+    }
 }
 
 void sc_screen_destroy(struct sc_screen *screen)
@@ -1133,8 +1292,11 @@ void sc_screen_destroy(struct sc_screen *screen)
     assert(!screen->open);
 #endif
 
-#ifdef HAVE_SDL2_TTF
-    // Cleanup panel font
+    if (screen->disconnect_started) {
+        sc_disconnect_destroy(&screen->disconnect);
+    }
+
+#ifdef HAVE_SDL3_TTF
     if (screen->panel_font)
     {
         TTF_CloseFont(screen->panel_font);
@@ -1143,7 +1305,6 @@ void sc_screen_destroy(struct sc_screen *screen)
     TTF_Quit();
 #endif
 
-    // Cleanup panel button icon textures
     for (int i = 0; i < screen->panel.button_count; i++)
     {
         if (screen->panel.buttons[i].icon_texture)
@@ -1152,29 +1313,48 @@ void sc_screen_destroy(struct sc_screen *screen)
             screen->panel.buttons[i].icon_texture = NULL;
         }
     }
-    
-    // Cleanup icon root path
+
     if (screen->icon_root_path)
     {
         free(screen->icon_root_path);
         screen->icon_root_path = NULL;
     }
 
-    // Cleanup cursors
     if (screen->hand_cursor)
     {
-        SDL_FreeCursor(screen->hand_cursor);
+        SDL_DestroyCursor(screen->hand_cursor);
     }
     if (screen->arrow_cursor)
     {
-        SDL_FreeCursor(screen->arrow_cursor);
+        SDL_DestroyCursor(screen->arrow_cursor);
     }
 
-    sc_display_destroy(&screen->display);
+    sc_texture_destroy(&screen->tex);
     av_frame_free(&screen->frame);
+#ifdef SC_DISPLAY_FORCE_OPENGL_CORE_PROFILE
+    SDL_GL_DestroyContext(screen->gl_context);
+#endif
+    SDL_DestroyRenderer(screen->renderer);
     SDL_DestroyWindow(screen->window);
     sc_fps_counter_destroy(&screen->fps_counter);
     sc_frame_buffer_destroy(&screen->fb);
+    sc_mutex_destroy(&screen->mutex);
+
+    SDL_Event event;
+    bool has_event =
+        sc_dequeue_event(SC_EVENT_DISCONNECTED_ICON_LOADED, &event);
+    if (has_event) {
+        assert(event.type == SC_EVENT_DISCONNECTED_ICON_LOADED);
+        SDL_Surface *dangling_icon = event.user.data1;
+        sc_icon_destroy(dangling_icon);
+    }
+
+    has_event = sc_dequeue_event(SC_EVENT_OPEN_WINDOW, &event);
+    if (has_event) {
+        assert(event.type == SC_EVENT_OPEN_WINDOW);
+        struct sc_size * size = event.user.data1;
+        free(size);
+    }
 }
 
 static void
@@ -1183,30 +1363,35 @@ resize_for_content(struct sc_screen *screen, struct sc_size old_content_size,
 {
     assert(screen->video);
 
-    struct sc_size window_size = get_window_size(screen);
-    struct sc_size target_size = {
-        .width = (uint32_t)window_size.width * new_content_size.width / old_content_size.width,
-        .height = (uint32_t)window_size.height * new_content_size.height / old_content_size.height,
-    };
+    struct sc_size target_size = new_content_size;
+    if (!screen->flex_display) {
+        struct sc_size window_size = sc_sdl_get_window_size(screen->window);
+        target_size.width = (uint32_t) window_size.width * target_size.width
+                          / old_content_size.width;
+        target_size.height = (uint32_t) window_size.height * target_size.height
+                           / old_content_size.height;
+    }
     target_size = get_optimal_size(target_size, new_content_size, true);
-    set_window_size(screen, target_size);
+    assert(is_windowed(screen));
+    set_aspect_ratio(screen, new_content_size);
+    sc_sdl_set_window_size(screen->window, target_size);
 }
 
 static void
-set_content_size(struct sc_screen *screen, struct sc_size new_content_size)
-{
+set_content_size(struct sc_screen *screen, struct sc_size new_content_size,
+                 bool resize) {
     assert(screen->video);
 
-    if (!screen->fullscreen && !screen->maximized && !screen->minimized)
-    {
-        resize_for_content(screen, screen->content_size, new_content_size);
-    }
-    else if (!screen->resize_pending)
-    {
-        // Store the windowed size to be able to compute the optimal size once
-        // fullscreen/maximized/minimized are disabled
-        screen->windowed_content_size = screen->content_size;
-        screen->resize_pending = true;
+    if (resize) {
+        if (is_windowed(screen)) {
+            resize_for_content(screen, screen->content_size, new_content_size);
+        } else if (screen->flex_display) {
+            struct sc_size size = sc_sdl_get_window_size(screen->window);
+            sc_controller_resize_display(screen->controller, size.width, size.height);
+        } else if (!screen->resize_pending) {
+            screen->windowed_content_size = screen->content_size;
+            screen->resize_pending = true;
+        }
     }
 
     screen->content_size = new_content_size;
@@ -1217,11 +1402,8 @@ apply_pending_resize(struct sc_screen *screen)
 {
     assert(screen->video);
 
-    assert(!screen->fullscreen);
-    assert(!screen->maximized);
-    assert(!screen->minimized);
-    if (screen->resize_pending)
-    {
+    assert(is_windowed(screen));
+    if (screen->resize_pending) {
         resize_for_content(screen, screen->windowed_content_size,
                            screen->content_size);
         screen->resize_pending = false;
@@ -1241,7 +1423,7 @@ void sc_screen_set_orientation(struct sc_screen *screen,
     struct sc_size new_content_size =
         get_oriented_size(screen->frame_size, orientation);
 
-    set_content_size(screen, new_content_size);
+    set_content_size(screen, new_content_size, true);
 
     screen->orientation = orientation;
     LOGI("Display orientation set to %s", sc_orientation_get_name(orientation));
@@ -1250,87 +1432,42 @@ void sc_screen_set_orientation(struct sc_screen *screen,
 }
 
 static bool
-sc_screen_init_size(struct sc_screen *screen)
-{
-    // Before first frame
-    assert(!screen->has_frame);
-
-    // The requested size is passed via screen->frame_size
-
-    struct sc_size content_size =
-        get_oriented_size(screen->frame_size, screen->orientation);
-    screen->content_size = content_size;
-
-    enum sc_display_result res =
-        sc_display_set_texture_size(&screen->display, screen->frame_size);
-    return res != SC_DISPLAY_RESULT_ERROR;
-}
-
-// recreate the texture and resize the window if the frame size has changed
-static enum sc_display_result
-prepare_for_frame(struct sc_screen *screen, struct sc_size new_frame_size)
-{
+sc_screen_apply_frame(struct sc_screen *screen, bool can_resize) {
     assert(screen->video);
-
-    if (screen->frame_size.width == new_frame_size.width && screen->frame_size.height == new_frame_size.height)
-    {
-        return SC_DISPLAY_RESULT_OK;
+    if (!screen->window_shown) {
+        return false;
     }
-
-    // frame dimension changed
-    screen->frame_size = new_frame_size;
-
-    struct sc_size new_content_size =
-        get_oriented_size(new_frame_size, screen->orientation);
-    set_content_size(screen, new_content_size);
-
-    sc_screen_update_content_rect(screen);
-
-    return sc_display_set_texture_size(&screen->display, screen->frame_size);
-}
-
-static bool
-sc_screen_apply_frame(struct sc_screen *screen)
-{
-    assert(screen->video);
 
     sc_fps_counter_add_rendered_frame(&screen->fps_counter);
 
     AVFrame *frame = screen->frame;
     struct sc_size new_frame_size = {frame->width, frame->height};
-    enum sc_display_result res = prepare_for_frame(screen, new_frame_size);
-    if (res == SC_DISPLAY_RESULT_ERROR)
-    {
+
+    if (!new_frame_size.width || !new_frame_size.height) {
+        LOGE("Invalid frame size: %" PRIu32 "x%" PRIu32,
+             new_frame_size.width, new_frame_size.height);
         return false;
     }
-    if (res == SC_DISPLAY_RESULT_PENDING)
-    {
-        // Not an error, but do not continue
-        return true;
-    }
 
-    res = sc_display_update_texture(&screen->display, frame);
-    if (res == SC_DISPLAY_RESULT_ERROR)
-    {
-        return false;
-    }
-    if (res == SC_DISPLAY_RESULT_PENDING)
-    {
-        // Not an error, but do not continue
-        return true;
-    }
+    if (screen->frame_size.width != new_frame_size.width
+            || screen->frame_size.height != new_frame_size.height) {
 
-    if (!screen->has_frame)
-    {
-        screen->has_frame = true;
-        // this is the very first frame, show the window
-        sc_screen_show_initial_window(screen);
+        screen->frame_size = new_frame_size;
 
-        if (sc_screen_is_relative_mode(screen))
-        {
-            // Capture mouse on start
-            sc_mouse_capture_set_active(&screen->mc, true);
+        struct sc_size new_content_size =
+            get_oriented_size(new_frame_size, screen->orientation);
+
+        if (screen->flex_display) {
+            sc_screen_track_resize(screen, new_content_size);
         }
+
+        set_content_size(screen, new_content_size, can_resize);
+        sc_screen_update_content_rect(screen);
+    }
+
+    bool ok = sc_texture_set_from_frame(&screen->tex, frame);
+    if (!ok) {
+        return false;
     }
 
     sc_screen_render(screen, false);
@@ -1357,33 +1494,41 @@ sc_screen_update_frame(struct sc_screen *screen)
         {
             av_frame_unref(screen->resume_frame);
         }
+        sc_mutex_lock(&screen->mutex);
         sc_frame_buffer_consume(&screen->fb, screen->resume_frame);
+        sc_mutex_unlock(&screen->mutex);
         return true;
     }
 
     av_frame_unref(screen->frame);
+    sc_mutex_lock(&screen->mutex);
     sc_frame_buffer_consume(&screen->fb, screen->frame);
-    return sc_screen_apply_frame(screen);
+    bool can_resize = !screen->prevent_auto_resize;
+    sc_mutex_unlock(&screen->mutex);
+    return sc_screen_apply_frame(screen, can_resize);
 }
 
 void sc_screen_set_paused(struct sc_screen *screen, bool paused)
 {
     assert(screen->video);
+    if (!screen->window_shown) {
+        return;
+    }
 
     if (!paused && !screen->paused)
     {
-        // nothing to do
         return;
     }
 
     if (screen->paused && screen->resume_frame)
     {
-        // If display screen was paused, refresh the frame immediately, even if
-        // the new state is also paused.
         av_frame_free(&screen->frame);
         screen->frame = screen->resume_frame;
         screen->resume_frame = NULL;
-        sc_screen_apply_frame(screen);
+        bool ok = sc_screen_apply_frame(screen, true);
+        if (!ok) {
+            LOGE("Resume frame update failed");
+        }
     }
 
     if (!paused)
@@ -1406,46 +1551,76 @@ void sc_screen_toggle_fullscreen(struct sc_screen *screen)
 {
     assert(screen->video);
 
-    uint32_t new_mode = screen->fullscreen ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP;
-    if (SDL_SetWindowFullscreen(screen->window, new_mode))
-    {
+    bool req_fullscreen =
+        !(SDL_GetWindowFlags(screen->window) & SDL_WINDOW_FULLSCREEN);
+
+    bool ok = SDL_SetWindowFullscreen(screen->window, req_fullscreen);
+    if (!ok) {
         LOGW("Could not switch fullscreen mode: %s", SDL_GetError());
         return;
     }
 
-    screen->fullscreen = !screen->fullscreen;
-    if (!screen->fullscreen && !screen->maximized && !screen->minimized)
-    {
-        apply_pending_resize(screen);
-    }
-
-    LOGD("Switched to %s mode", screen->fullscreen ? "fullscreen" : "windowed");
-    sc_screen_render(screen, true);
+    LOGD("Requested %s mode", req_fullscreen ? "fullscreen" : "windowed");
 }
 
 void sc_screen_resize_to_fit(struct sc_screen *screen)
 {
     assert(screen->video);
 
-    if (screen->fullscreen || screen->maximized || screen->minimized)
-    {
+    if (!is_windowed(screen)) {
         return;
     }
 
-    struct sc_point point = get_window_position(screen);
-    struct sc_size window_size = get_window_size(screen);
+    if (screen->render_fit == SC_RENDER_FIT_STRETCHED) {
+        return;
+    }
+
+    struct sc_size window_size = sc_sdl_get_window_size(screen->window);
+
+    if (screen->render_fit == SC_RENDER_FIT_UNSCALED) {
+        struct sc_size content_size = screen->content_size;
+        set_aspect_ratio(screen, content_size);
+        sc_sdl_set_window_size(screen->window, content_size);
+
+        int32_t x_offset = 0;
+        if (content_size.width < window_size.width) {
+            x_offset = (window_size.width - content_size.width) / 2;
+        }
+        int32_t y_offset = 0;
+        if (content_size.height < window_size.height) {
+            y_offset = (window_size.height - content_size.height) / 2;
+        }
+        assert(x_offset >= 0 && y_offset >= 0);
+        if (x_offset || y_offset) {
+            struct sc_point pos = sc_sdl_get_window_position(screen->window);
+            pos.x += x_offset;
+            pos.y += y_offset;
+            sc_sdl_set_window_position(screen->window, pos);
+        }
+
+        LOGD("Resized to content size: %ux%u", content_size.width,
+                                               content_size.height);
+        return;
+    }
+
+    assert(screen->render_fit == SC_RENDER_FIT_LETTERBOX);
+
+    struct sc_point point = sc_sdl_get_window_position(screen->window);
 
     struct sc_size optimal_size =
         get_optimal_size(window_size, screen->content_size, false);
 
-    // Center the window related to the device screen
     assert(optimal_size.width <= window_size.width);
     assert(optimal_size.height <= window_size.height);
-    uint32_t new_x = point.x + (window_size.width - optimal_size.width) / 2;
-    uint32_t new_y = point.y + (window_size.height - optimal_size.height) / 2;
 
-    SDL_SetWindowSize(screen->window, optimal_size.width, optimal_size.height);
-    SDL_SetWindowPosition(screen->window, new_x, new_y);
+    struct sc_point new_position = {
+        .x = point.x + (window_size.width - optimal_size.width) / 2,
+        .y = point.y + (window_size.height - optimal_size.height) / 2,
+    };
+
+    set_aspect_ratio(screen, screen->content_size);
+    sc_sdl_set_window_size(screen->window, optimal_size);
+    sc_sdl_set_window_position(screen->window, new_position);
     LOGD("Resized to optimal size: %ux%u", optimal_size.width,
          optimal_size.height);
 }
@@ -1454,132 +1629,151 @@ void sc_screen_resize_to_pixel_perfect(struct sc_screen *screen)
 {
     assert(screen->video);
 
-    if (screen->fullscreen || screen->minimized)
-    {
+    if (!is_windowed(screen)) {
         return;
     }
 
-    if (screen->maximized)
-    {
-        SDL_RestoreWindow(screen->window);
-        screen->maximized = false;
-    }
-
     struct sc_size content_size = screen->content_size;
-    SDL_SetWindowSize(screen->window, content_size.width, content_size.height);
+    set_aspect_ratio(screen, content_size);
+    sc_sdl_set_window_size(screen->window, content_size);
     LOGD("Resized to pixel-perfect: %ux%u", content_size.width,
          content_size.height);
 }
 
-bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
-{
-    switch (event->type)
-    {
-    case SC_EVENT_SCREEN_INIT_SIZE:
-    {
-        // The initial size is passed via screen->frame_size
-        bool ok = sc_screen_init_size(screen);
-        if (!ok)
-        {
-            LOGE("Could not initialize screen size");
-            return false;
-        }
-        return true;
-    }
-    case SC_EVENT_NEW_FRAME:
-    {
-        bool ok = sc_screen_update_frame(screen);
-        if (!ok)
-        {
-            LOGE("Frame update failed\n");
-            return false;
-        }
-        return true;
-    }
-    case SDL_WINDOWEVENT:
-        if (!screen->video && event->window.event == SDL_WINDOWEVENT_EXPOSED)
-        {
-            sc_screen_render_novideo(screen);
-        }
+static void
+sc_disconnect_on_icon_loaded(struct sc_disconnect *d, SDL_Surface *icon,
+                             void *userdata) {
+    (void) d;
+    (void) userdata;
 
-        // !video implies !has_frame
-        assert(screen->video || !screen->has_frame);
-        if (!screen->has_frame)
-        {
-            // Do nothing
-            return true;
-        }
-        switch (event->window.event)
-        {
-        case SDL_WINDOWEVENT_EXPOSED:
-            sc_screen_render(screen, true);
-            break;
-        case SDL_WINDOWEVENT_SIZE_CHANGED:
-            sc_screen_render(screen, true);
-            break;
-        case SDL_WINDOWEVENT_MAXIMIZED:
-            screen->maximized = true;
-            break;
-        case SDL_WINDOWEVENT_MINIMIZED:
-            screen->minimized = true;
-            break;
-        case SDL_WINDOWEVENT_RESTORED:
-            if (screen->fullscreen)
-            {
-                // On Windows, in maximized+fullscreen, disabling
-                // fullscreen mode unexpectedly triggers the "restored"
-                // then "maximized" events, leaving the window in a
-                // weird state (maximized according to the events, but
-                // not maximized visually).
-                break;
+    bool ok = sc_push_event_with_data(SC_EVENT_DISCONNECTED_ICON_LOADED, icon);
+    if (!ok) {
+        sc_icon_destroy(icon);
+    }
+}
+
+static void
+sc_disconnect_on_timeout(struct sc_disconnect *d, void *userdata) {
+    (void) d;
+    (void) userdata;
+
+    bool ok = sc_push_event(SC_EVENT_DISCONNECTED_TIMEOUT);
+    (void) ok;
+}
+
+void
+sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event) {
+    switch (event->type) {
+        case SC_EVENT_OPEN_WINDOW: {
+            struct sc_size *size = event->user.data1;
+            assert(size);
+
+            screen->frame_size = *size;
+            free(size);
+            screen->content_size = get_oriented_size(screen->frame_size,
+                                                     screen->orientation);
+            sc_screen_show_initial_window(screen);
+
+            if (sc_screen_is_relative_mode(screen)) {
+                sc_mouse_capture_set_active(&screen->mc, true);
             }
-            screen->maximized = false;
-            screen->minimized = false;
-            apply_pending_resize(screen);
-            sc_screen_render(screen, true);
-            break;
+
+            sc_screen_render(screen, false);
+            return;
         }
-        return true;
+        case SC_EVENT_NEW_FRAME: {
+            if (!screen->window_shown) {
+                return;
+            }
+            bool ok = sc_screen_update_frame(screen);
+            if (!ok) {
+                LOGE("Frame update failed\n");
+            }
+            return;
+        }
+        case SDL_EVENT_WINDOW_EXPOSED:
+            sc_screen_render(screen, true);
+            return;
+#ifndef CONTINUOUS_RESIZING_WORKAROUND
+        case SDL_EVENT_WINDOW_RESIZED:
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+            sc_screen_on_resize(screen, &event->window);
+            return;
+#endif
+        case SDL_EVENT_WINDOW_RESTORED:
+            if (screen->video && is_windowed(screen)) {
+                apply_pending_resize(screen);
+                sc_screen_render(screen, true);
+            }
+            return;
+        case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+            LOGD("Switched to fullscreen mode");
+            assert(screen->video);
+            return;
+        case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+            LOGD("Switched to windowed mode");
+            assert(screen->video);
+            if (is_windowed(screen)) {
+                apply_pending_resize(screen);
+                sc_screen_render(screen, true);
+            }
+            return;
+        case SC_EVENT_DEVICE_DISCONNECTED:
+            assert(!screen->disconnected);
+            screen->disconnected = true;
+            if (!screen->window_shown) {
+                return;
+            }
+
+            sc_input_manager_handle_event(&screen->im, event);
+
+            sc_texture_reset(&screen->tex);
+            sc_screen_render(screen, true);
+
+            sc_tick deadline = sc_tick_now() + SC_TICK_FROM_SEC(2);
+            static const struct sc_disconnect_callbacks cbs = {
+                .on_icon_loaded = sc_disconnect_on_icon_loaded,
+                .on_timeout = sc_disconnect_on_timeout,
+            };
+            bool ok =
+                sc_disconnect_start(&screen->disconnect, deadline, &cbs, NULL);
+            if (ok) {
+                screen->disconnect_started = true;
+            }
+
+            return;
     }
 
     if (sc_screen_is_relative_mode(screen) && sc_mouse_capture_handle_event(&screen->mc, event))
     {
-        // The mouse capture handler consumed the event
-        return true;
+        return;
     }
 
-    // Handle mouse motion for cursor change on panel hover
-    if (event->type == SDL_MOUSEMOTION &&
+    // LinkAndroid: Handle mouse motion for cursor change on panel hover
+    if (event->type == SDL_EVENT_MOUSE_MOTION &&
         screen->panel.visible &&
         screen->panel.button_count > 0 &&
         screen->hand_cursor &&
         screen->arrow_cursor)
     {
-
-        // Get mouse position in drawable coordinates
+        // SDL3 event coords are logical points; panel rendering uses physical
+        // pixels, but hit‑testing is done in logical points for consistency
+        // with the rest of the upstream code.
         int32_t x = event->motion.x;
         int32_t y = event->motion.y;
-        sc_screen_hidpi_scale_coords(screen, &x, &y);
 
-        // Get HiDPI scale factor for button dimensions
-        int ww, wh, dw, dh;
-        SDL_GetWindowSize(screen->window, &ww, &wh);
-        SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
-        float hidpi_scale = (float)dw / ww;
-
-        // Check if mouse is over panel area
+        // Panel left edge in logical points
         int panel_x = screen->rect.x + screen->rect.w;
-        int panel_w = sc_screen_get_panel_width_scaled(screen);
+        int panel_w = PANEL_WIDTH; // logical points
         bool over_button = false;
         int new_hovered_index = -1;
 
         if (x >= panel_x && x < panel_x + panel_w)
         {
-            // Mouse is in panel, check if over a button
-            int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
-            int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
+            int button_margin = PANEL_BUTTON_MARGIN;
+            int button_height = PANEL_BUTTON_HEIGHT;
             int button_width = panel_w - 2 * button_margin;
-            int start_y = (int)(PANEL_START_Y * hidpi_scale);
+            int start_y = PANEL_START_Y;
 
             for (int i = 0; i < screen->panel.button_count; i++)
             {
@@ -1596,18 +1790,15 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
             }
         }
 
-        // Update hovered button state and trigger render if changed
         if (new_hovered_index != screen->panel.hovered_button_index)
         {
             screen->panel.hovered_button_index = new_hovered_index;
-            
-            // Trigger immediate render to show/hide highlight effect
-            if (screen->video && screen->has_frame) {
+
+            if (screen->video && screen->window_shown) {
                 sc_screen_render(screen, false);
             }
         }
 
-        // Change cursor if needed
         if (over_button && !screen->cursor_is_hand)
         {
             SDL_SetCursor(screen->hand_cursor);
@@ -1620,38 +1811,28 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
         }
     }
 
-    // Check if the event is a panel button click or any mouse event in panel area
-    if ((event->type == SDL_MOUSEBUTTONDOWN || event->type == SDL_MOUSEBUTTONUP) &&
+    // LinkAndroid: Handle panel button clicks
+    if ((event->type == SDL_EVENT_MOUSE_BUTTON_DOWN || event->type == SDL_EVENT_MOUSE_BUTTON_UP) &&
         screen->panel.visible &&
         screen->panel.button_count > 0)
     {
-
-        // Get mouse position in drawable coordinates
+        // SDL3 event coords are logical points
         int32_t x = event->button.x;
         int32_t y = event->button.y;
-        sc_screen_hidpi_scale_coords(screen, &x, &y);
 
-        // Get HiDPI scale factor for button dimensions
-        int ww, wh, dw, dh;
-        SDL_GetWindowSize(screen->window, &ww, &wh);
-        SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
-        float hidpi_scale = (float)dw / ww;
-
-        // Check if click is in panel area (right of video rect)
-        int panel_x = screen->rect.x + screen->rect.w;
-        int panel_w = sc_screen_get_panel_width_scaled(screen);
+        int panel_x = screen->rect.x + screen->rect.w; // logical points
+        int panel_w = PANEL_WIDTH;                      // logical points
 
         bool in_panel = x >= panel_x && x < panel_x + panel_w;
 
-        if (event->type == SDL_MOUSEBUTTONDOWN)
+        if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN)
         {
             if (in_panel)
             {
-                // Mouse down in panel area - check which button was clicked
-                int button_margin = (int)(PANEL_BUTTON_MARGIN * hidpi_scale);
-                int button_height = (int)(PANEL_BUTTON_HEIGHT * hidpi_scale);
+                int button_margin = PANEL_BUTTON_MARGIN;
+                int button_height = PANEL_BUTTON_HEIGHT;
                 int button_width = panel_w - 2 * button_margin;
-                int start_y = (int)(PANEL_START_Y * hidpi_scale);
+                int start_y = PANEL_START_Y;
 
                 for (int i = 0; i < screen->panel.button_count; i++)
                 {
@@ -1661,109 +1842,135 @@ bool sc_screen_handle_event(struct sc_screen *screen, const SDL_Event *event)
                     if (x >= btn_x && x < btn_x + button_width &&
                         y >= btn_y && y < btn_y + button_height)
                     {
-                        // Button clicked!
                         sc_screen_send_panel_click(screen, screen->panel.buttons[i].id);
-                        
-                        // Trigger immediate render to update button state
-                        if (screen->video && screen->has_frame) {
+
+                        if (screen->video && screen->window_shown) {
                             sc_screen_render(screen, false);
                         }
-                        
-                        return true; // Consume the event
+
+                        return;
                     }
                 }
-                // Mouse down in panel area (not on button), consume the event
-                return true;
+                return;
             }
             else
             {
-                // Mouse down outside panel area, track this
                 screen->mouse_button_pressed_outside_panel = true;
             }
         }
-        else // SDL_MOUSEBUTTONUP
+        else // SDL_EVENT_MOUSE_BUTTON_UP
         {
             if (in_panel)
             {
-                // SDL_MOUSEBUTTONUP in panel area
-                // We need to let the input_manager handle this event first to ensure
-                // proper button state cleanup (especially if the button was pressed
-                // in the video area and released in the panel area).
-                // After input_manager processes it, we'll consume the event.
                 sc_input_manager_handle_event(&screen->im, event);
                 screen->mouse_button_pressed_outside_panel = false;
-                return true; // Consume the event after processing
+                return;
             }
             else
             {
-                // Mouse up outside panel area
                 screen->mouse_button_pressed_outside_panel = false;
             }
         }
     }
 
-    // Also filter out mouse motion events in panel area
-    if (event->type == SDL_MOUSEMOTION &&
+    // LinkAndroid: Filter mouse motion events in panel area
+    if (event->type == SDL_EVENT_MOUSE_MOTION &&
         screen->panel.visible)
     {
-        // Get mouse position in drawable coordinates
+        // SDL3 event coords are logical points
         int32_t x = event->motion.x;
         int32_t y = event->motion.y;
-        sc_screen_hidpi_scale_coords(screen, &x, &y);
 
-        // Check if motion is in panel area (right of video rect)
-        int panel_x = screen->rect.x + screen->rect.w;
-        int panel_w = sc_screen_get_panel_width_scaled(screen);
+        int panel_x = screen->rect.x + screen->rect.w; // logical points
+        int panel_w = PANEL_WIDTH;                      // logical points
 
         if (x >= panel_x && x < panel_x + panel_w)
         {
-            // Mouse entered panel area while button was pressed outside
-            // Send a button release event to complete the gesture on the device
             if (screen->mouse_button_pressed_outside_panel)
             {
-                // Create a synthetic MOUSEBUTTONUP event
                 SDL_Event release_event = *event;
-                release_event.type = SDL_MOUSEBUTTONUP;
-                release_event.button.state = SDL_RELEASED;
+                release_event.type = SDL_EVENT_MOUSE_BUTTON_UP;
                 release_event.button.button = SDL_BUTTON_LEFT;
                 release_event.button.clicks = 1;
-                
-                // Send the release event to input_manager
+
                 sc_input_manager_handle_event(&screen->im, &release_event);
-                
-                // Clear the tracking flag
+
                 screen->mouse_button_pressed_outside_panel = false;
-                
+
                 LOGD("Sent synthetic mouse release event when entering panel area");
             }
-            
-            // Mouse motion in panel area, don't send to device
-            // (but don't consume - let cursor handling work)
-            // Actually, we should consume it to prevent touch_move events
-            return true;
+
+            return;
         }
     }
 
     sc_input_manager_handle_event(&screen->im, event);
-    return true;
+}
+
+void
+sc_screen_handle_disconnection(struct sc_screen *screen) {
+    if (!screen->window_shown) {
+        return;
+    }
+
+    if (!screen->disconnect_started) {
+        return;
+    }
+
+    SDL_Event event;
+    while (SDL_WaitEvent(&event)) {
+        switch (event.type) {
+            case SDL_EVENT_WINDOW_EXPOSED:
+                sc_screen_render(screen, true);
+                break;
+            case SC_EVENT_DISCONNECTED_ICON_LOADED: {
+                SDL_Surface *icon_disconnected = event.user.data1;
+                assert(icon_disconnected);
+
+                bool ok = sc_texture_set_from_surface(&screen->tex,
+                                                      icon_disconnected);
+                if (ok) {
+                    screen->content_size.width = icon_disconnected->w;
+                    screen->content_size.height = icon_disconnected->h;
+                    sc_screen_render(screen, true);
+                } else {
+                    LOGE("Could not set disconnected icon");
+                }
+
+                sc_icon_destroy(icon_disconnected);
+                break;
+            }
+            case SC_EVENT_DISCONNECTED_TIMEOUT:
+                LOGD("Closing after device disconnection");
+                return;
+            case SDL_EVENT_QUIT:
+                LOGD("User requested to quit");
+                sc_screen_interrupt_disconnect(screen);
+                return;
+            default:
+                sc_input_manager_handle_event(&screen->im, &event);
+        }
+    }
 }
 
 struct sc_point
-sc_screen_convert_drawable_to_frame_coords(struct sc_screen *screen,
-                                           int32_t x, int32_t y)
-{
+sc_screen_convert_window_to_frame_coords(struct sc_screen *screen,
+                                         int32_t x, int32_t y) {
     assert(screen->video);
+
+    // SDL3 event coordinates are in logical points (same as screen->rect).
+    // No HiDPI conversion needed — upstream scrcpy removed hidpi_scale_coords
+    // for this reason (commit aecd902e).
 
     enum sc_orientation orientation = screen->orientation;
 
     int32_t w = screen->content_size.width;
     int32_t h = screen->content_size.height;
 
-    // screen->rect must be initialized to avoid a division by zero
     assert(screen->rect.w && screen->rect.h);
 
-    x = (int64_t)(x - screen->rect.x) * w / screen->rect.w;
-    y = (int64_t)(y - screen->rect.y) * h / screen->rect.h;
+    x = (int64_t)(x - screen->rect.x) * w / (int32_t)screen->rect.w;
+    y = (int64_t)(y - screen->rect.y) * h / (int32_t)screen->rect.h;
 
     struct sc_point result;
     switch (orientation)
@@ -1806,24 +2013,61 @@ sc_screen_convert_drawable_to_frame_coords(struct sc_screen *screen,
     return result;
 }
 
-struct sc_point
-sc_screen_convert_window_to_frame_coords(struct sc_screen *screen,
-                                         int32_t x, int32_t y)
+static struct sc_point
+sc_screen_convert_drawable_to_frame_coords(struct sc_screen *screen,
+                                           int32_t x, int32_t y)
 {
-    sc_screen_hidpi_scale_coords(screen, &x, &y);
-    return sc_screen_convert_drawable_to_frame_coords(screen, x, y);
-}
+    assert(screen->video);
 
-void sc_screen_hidpi_scale_coords(struct sc_screen *screen, int32_t *x, int32_t *y)
-{
-    // take the HiDPI scaling (dw/ww and dh/wh) into account
-    int ww, wh, dw, dh;
-    SDL_GetWindowSize(screen->window, &ww, &wh);
-    SDL_GL_GetDrawableSize(screen->window, &dw, &dh);
+    enum sc_orientation orientation = screen->orientation;
 
-    // scale for HiDPI (64 bits for intermediate multiplications)
-    *x = (int64_t)*x * dw / ww;
-    *y = (int64_t)*y * dh / wh;
+    int32_t w = screen->content_size.width;
+    int32_t h = screen->content_size.height;
+
+    assert(screen->rect.w && screen->rect.h);
+
+    x = (int64_t)(x - screen->rect.x) * w / (int32_t)screen->rect.w;
+    y = (int64_t)(y - screen->rect.y) * h / (int32_t)screen->rect.h;
+
+    struct sc_point result;
+    switch (orientation)
+    {
+    case SC_ORIENTATION_0:
+        result.x = x;
+        result.y = y;
+        break;
+    case SC_ORIENTATION_90:
+        result.x = y;
+        result.y = w - x;
+        break;
+    case SC_ORIENTATION_180:
+        result.x = w - x;
+        result.y = h - y;
+        break;
+    case SC_ORIENTATION_270:
+        result.x = h - y;
+        result.y = x;
+        break;
+    case SC_ORIENTATION_FLIP_0:
+        result.x = w - x;
+        result.y = y;
+        break;
+    case SC_ORIENTATION_FLIP_90:
+        result.x = h - y;
+        result.y = w - x;
+        break;
+    case SC_ORIENTATION_FLIP_180:
+        result.x = x;
+        result.y = h - y;
+        break;
+    default:
+        assert(orientation == SC_ORIENTATION_FLIP_270);
+        result.x = y;
+        result.y = x;
+        break;
+    }
+
+    return result;
 }
 
 void sc_screen_update_panel(struct sc_screen *screen, const char *json)
@@ -1856,7 +2100,6 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
         return;
     }
 
-    // Ignore panel data if --linkandroid-panel-show was not specified
     if (!screen->panel_enabled)
     {
         LOGD("Panel data received but panel is disabled (use --linkandroid-panel-show to enable)");
@@ -1872,7 +2115,6 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
         return;
     }
 
-    // Clear existing buttons and their icon textures
     for (int i = 0; i < screen->panel.button_count; i++)
     {
         if (screen->panel.buttons[i].icon_texture)
@@ -1883,7 +2125,7 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
     }
     screen->panel.button_count = 0;
     screen->panel.visible = true;
-    screen->panel.hovered_button_index = -1; // Reset hover state when reloading buttons
+    screen->panel.hovered_button_index = -1;
 
     int array_size = cJSON_GetArraySize(buttons_array);
     int count = 0;
@@ -1900,10 +2142,8 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
         cJSON *text_item = cJSON_GetObjectItemCaseSensitive(button_item, "text");
         cJSON *icon_item = cJSON_GetObjectItemCaseSensitive(button_item, "icon");
 
-        // Support old format with direct button text as well
         if (!text_item)
         {
-            // Try to get the first string value as text
             cJSON *child = button_item->child;
             while (child)
             {
@@ -1922,20 +2162,17 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
                     sizeof(screen->panel.buttons[count].id) - 1);
             screen->panel.buttons[count].id[sizeof(screen->panel.buttons[count].id) - 1] = '\0';
 
-            // Clear text and icon fields
             screen->panel.buttons[count].text[0] = '\0';
             screen->panel.buttons[count].icon[0] = '\0';
             screen->panel.buttons[count].icon_texture = NULL;
 
-            // Set text if provided
             if (cJSON_IsString(text_item))
             {
                 strncpy(screen->panel.buttons[count].text, text_item->valuestring,
                         sizeof(screen->panel.buttons[count].text) - 1);
                 screen->panel.buttons[count].text[sizeof(screen->panel.buttons[count].text) - 1] = '\0';
             }
-            
-            // Set icon if provided (icon takes precedence over text for rendering)
+
             if (cJSON_IsString(icon_item))
             {
                 strncpy(screen->panel.buttons[count].icon, icon_item->valuestring,
@@ -1948,30 +2185,32 @@ void sc_screen_update_panel(struct sc_screen *screen, const char *json)
     }
 
     screen->panel.button_count = count;
-    // Hide panel when no buttons — restores full-screen video layout
     if (count == 0) {
         screen->panel.visible = false;
     }
-    screen->panel_layout_dirty = true; // force content rect recalc on next render
+    screen->panel_layout_dirty = true;
     LOGI("Panel updated with %d buttons", count);
 
-    cJSON_Delete(root);
+    // If the panel became (or was already) visible, dispatch a task to the
+    // main thread to enlarge the window and update the aspect ratio.
+    // SDL window operations must be on the main thread (macOS AppKit enforces
+    // this, and it crashes otherwise).
+    if (screen->window_shown && count > 0) {
+        sc_run_on_main_thread(task_enlarge_window_for_panel, screen, false);
+    }
 
-    // Note: Do not trigger immediate re-render here to avoid potential deadlock
-    // on Windows when called from WebSocket callback. The panel will be rendered
-    // in the next normal SDL render cycle.
+    cJSON_Delete(root);
 }
 
 void sc_screen_send_panel_click(struct sc_screen *screen, const char *button_id)
 {
-    (void)screen; // Suppress unused warning
+    (void)screen;
 
     if (!button_id || !g_websocket_client)
     {
         return;
     }
 
-    // Create JSON: {"type":"panel_button_click","data":{"id":"xxx"}}
     cJSON *root = cJSON_CreateObject();
     if (!root)
     {

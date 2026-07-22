@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
 #ifdef _WIN32
 // not needed here, but winsock2.h must never be included AFTER windows.h
@@ -17,7 +17,6 @@
 #include "audio_player.h"
 #include "controller.h"
 #include "decoder.h"
-#include "delay_buffer.h"
 #include "demuxer.h"
 #include "events.h"
 #include "file_pusher.h"
@@ -25,6 +24,7 @@
 #include "mouse_sdk.h"
 #include "recorder.h"
 #include "screen.h"
+#include "sdl_hints.h"
 #include "server.h"
 #include "uhid/gamepad_uhid.h"
 #include "uhid/keyboard_uhid.h"
@@ -39,6 +39,8 @@
 #include "util/acksync.h"
 #include "util/log.h"
 #include "util/rand.h"
+#include "util/str.h"
+#include "util/term.h"
 #include "util/timeout.h"
 #include "util/tick.h"
 #ifdef __APPLE__
@@ -47,6 +49,7 @@
 #ifdef HAVE_V4L2
 #include "v4l2_sink.h"
 #endif
+#include "video_regulator.h"
 
 // LinkAndroid: WebSocket event forwarding
 #include "input_manager.h"
@@ -62,10 +65,10 @@ struct scrcpy
     struct sc_decoder video_decoder;
     struct sc_decoder audio_decoder;
     struct sc_recorder recorder;
-    struct sc_delay_buffer video_buffer;
+    struct sc_video_regulator video_regulator;
 #ifdef HAVE_V4L2
     struct sc_v4l2_sink v4l2_sink;
-    struct sc_delay_buffer v4l2_buffer;
+    struct sc_video_regulator v4l2_regulator;
 #endif
     struct sc_controller controller;
     struct sc_file_pusher file_pusher;
@@ -105,187 +108,63 @@ struct scrcpy
 };
 
 #ifdef _WIN32
-static BOOL WINAPI windows_ctrl_handler(DWORD ctrl_type)
-{
-    if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT)
-    {
-        sc_push_event(SDL_QUIT);
+static BOOL WINAPI
+windows_ctrl_handler(DWORD ctrl_type) {
+    if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT) {
+        sc_push_event(SDL_EVENT_QUIT);
         return TRUE;
     }
     return FALSE;
 }
-#endif // _WIN32
 
 static void
-sdl_set_hints(const char *render_driver)
-{
-    if (render_driver && !SDL_SetHint(SDL_HINT_RENDER_DRIVER, render_driver))
-    {
-        LOGW("Could not set render driver");
-    }
-
-    // App name used in various contexts (such as PulseAudio)
-#if defined(SCRCPY_SDL_HAS_HINT_APP_NAME)
-    if (!SDL_SetHint(SDL_HINT_APP_NAME, "scrcpy"))
-    {
-        LOGW("Could not set app name");
-    }
-#elif defined(SCRCPY_SDL_HAS_HINT_AUDIO_DEVICE_APP_NAME)
-    if (!SDL_SetHint(SDL_HINT_AUDIO_DEVICE_APP_NAME, "scrcpy"))
-    {
-        LOGW("Could not set audio device app name");
-    }
-#endif
-
-    // Linear filtering
-    if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"))
-    {
-        LOGW("Could not enable linear filtering");
-    }
-
-    // Handle a click to gain focus as any other click
-    if (!SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1"))
-    {
-        LOGW("Could not enable mouse focus clickthrough");
-    }
-
-#ifdef SCRCPY_SDL_HAS_HINT_TOUCH_MOUSE_EVENTS
-    // Disable synthetic mouse events from touch events
-    // Touch events with id SDL_TOUCH_MOUSEID are ignored anyway, but it is
-    // better not to generate them in the first place.
-    if (!SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0"))
-    {
-        LOGW("Could not disable synthetic mouse events");
-    }
-#endif
-
-#ifdef SCRCPY_SDL_HAS_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR
-    // Disable compositor bypassing on X11
-    if (!SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0"))
-    {
-        LOGW("Could not disable X11 compositor bypass");
-    }
-#endif
-
-    // Do not minimize on focus loss
-    if (!SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0"))
-    {
-        LOGW("Could not disable minimize on focus loss");
-    }
-
-    if (!SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"))
-    {
-        LOGW("Could not allow joystick background events");
-    }
-
-#ifdef _WIN32
-    // Windows-specific optimizations for better performance
-    // Prefer Direct3D11 for better compatibility and performance on Windows
-    if (!render_driver) {
-        if (!SDL_SetHint(SDL_HINT_RENDER_DRIVER, "direct3d11"))
-        {
-            LOGW("Could not set Direct3D11 render driver");
-        }
-    }
-
-    // Enable batching for better performance
-    if (!SDL_SetHint(SDL_HINT_RENDER_BATCHING, "1"))
-    {
-        LOGW("Could not enable render batching");
-    }
-#endif
-}
-
-static void
-sdl_configure(bool video_playback, bool disable_screensaver)
-{
-#ifdef _WIN32
+sdl_configure_ctrl_c_windows(void) {
     // Clean up properly on Ctrl+C on Windows
     bool ok = SetConsoleCtrlHandler(windows_ctrl_handler, TRUE);
-    if (!ok)
-    {
+    if (!ok) {
         LOGW("Could not set Ctrl+C handler");
     }
-#endif // _WIN32
-
-    if (!video_playback)
-    {
-        return;
-    }
-
-    if (disable_screensaver)
-    {
-        SDL_DisableScreenSaver();
-    }
-    else
-    {
-        SDL_EnableScreenSaver();
-    }
 }
+#endif // _WIN32
 
 static enum scrcpy_exit_code
 event_loop(struct scrcpy *s, bool has_screen)
 {
     SDL_Event event;
-    while (SDL_WaitEvent(&event))
-    {
-        switch (event.type)
-        {
-        case SC_EVENT_DEVICE_DISCONNECTED:
-            LOGW("Device disconnected");
-            return SCRCPY_EXIT_DISCONNECTED;
-        case SC_EVENT_DEMUXER_ERROR:
-            LOGE("Demuxer error");
-            return SCRCPY_EXIT_FAILURE;
-        case SC_EVENT_CONTROLLER_ERROR:
-            LOGE("Controller error");
-            return SCRCPY_EXIT_FAILURE;
-        case SC_EVENT_RECORDER_ERROR:
-            LOGE("Recorder error");
-            return SCRCPY_EXIT_FAILURE;
-        case SC_EVENT_AOA_OPEN_ERROR:
-            LOGE("AOA open error");
-            return SCRCPY_EXIT_FAILURE;
-        case SC_EVENT_TIME_LIMIT_REACHED:
-            LOGI("Time limit reached");
-            return SCRCPY_EXIT_SUCCESS;
-        case SDL_QUIT:
-            LOGD("User requested to quit");
-            return SCRCPY_EXIT_SUCCESS;
-        case SC_EVENT_RUN_ON_MAIN_THREAD:
-        {
-            sc_runnable_fn run = event.user.data1;
-            void *userdata = event.user.data2;
-            run(userdata);
-            break;
-        }
-        default:
-            if (has_screen && !sc_screen_handle_event(&s->screen, &event))
-            {
+    while (SDL_WaitEvent(&event)) {
+        switch (event.type) {
+            case SC_EVENT_DEVICE_DISCONNECTED:
+                LOGW("Device disconnected");
+                if (has_screen) {
+                    sc_screen_handle_event(&s->screen, &event);
+                }
+                return SCRCPY_EXIT_DISCONNECTED;
+            case SC_EVENT_DEMUXER_ERROR:
+                LOGE("Demuxer error");
                 return SCRCPY_EXIT_FAILURE;
-            }
-            break;
+            case SC_EVENT_CONTROLLER_ERROR:
+                LOGE("Controller error");
+                return SCRCPY_EXIT_FAILURE;
+            case SC_EVENT_RECORDER_ERROR:
+                LOGE("Recorder error");
+                return SCRCPY_EXIT_FAILURE;
+            case SC_EVENT_AOA_OPEN_ERROR:
+                LOGE("AOA open error");
+                return SCRCPY_EXIT_FAILURE;
+            case SC_EVENT_TIME_LIMIT_REACHED:
+                LOGI("Time limit reached");
+                return SCRCPY_EXIT_SUCCESS;
+            case SDL_EVENT_QUIT:
+                LOGD("User requested to quit");
+                return SCRCPY_EXIT_SUCCESS;
+            default:
+                if (has_screen) {
+                    sc_screen_handle_event(&s->screen, &event);
+                }
+                break;
         }
     }
     return SCRCPY_EXIT_FAILURE;
-}
-
-static void
-terminate_event_loop(void)
-{
-    sc_reject_new_runnables();
-
-    SDL_Event event;
-    while (SDL_PollEvent(&event))
-    {
-        if (event.type == SC_EVENT_RUN_ON_MAIN_THREAD)
-        {
-            // Make sure all posted runnables are run, to avoid memory leaks
-            sc_runnable_fn run = event.user.data1;
-            void *userdata = event.user.data2;
-            run(userdata);
-        }
-    }
 }
 
 // Return true on success, false on error
@@ -293,26 +172,22 @@ static bool
 await_for_server(bool *connected)
 {
     SDL_Event event;
-    while (SDL_WaitEvent(&event))
-    {
-        switch (event.type)
-        {
-        case SDL_QUIT:
-            if (connected)
-            {
-                *connected = false;
-            }
-            return true;
-        case SC_EVENT_SERVER_CONNECTION_FAILED:
-            return false;
-        case SC_EVENT_SERVER_CONNECTED:
-            if (connected)
-            {
-                *connected = true;
-            }
-            return true;
-        default:
-            break;
+    while (SDL_WaitEvent(&event)) {
+        switch (event.type) {
+            case SDL_EVENT_QUIT:
+                if (connected) {
+                    *connected = false;
+                }
+                return true;
+            case SC_EVENT_SERVER_CONNECTION_FAILED:
+                return false;
+            case SC_EVENT_SERVER_CONNECTED:
+                if (connected) {
+                    *connected = true;
+                }
+                return true;
+            default:
+                break;
         }
     }
 
@@ -441,21 +316,38 @@ scrcpy_generate_scid(void)
 }
 
 static void
-init_sdl_gamepads(void)
-{
-    // Trigger a SDL_CONTROLLERDEVICEADDED event for all gamepads already
+init_sdl_gamepads(void) {
+    // Trigger a SDL_EVENT_GAMEPAD_ADDED event for all gamepads already
     // connected
-    int num_joysticks = SDL_NumJoysticks();
-    for (int i = 0; i < num_joysticks; ++i)
-    {
-        if (SDL_IsGameController(i))
-        {
+    int count;
+    SDL_JoystickID *joysticks = SDL_GetJoysticks(&count);
+    if (!joysticks) {
+        LOGE("Could not list joysticks: %s", SDL_GetError());
+        return;
+    }
+
+    for (int i = 0; i < count; ++i) {
+        SDL_JoystickID joystick = joysticks[i];
+        if (SDL_IsGamepad(joystick)) {
             SDL_Event event;
-            event.cdevice.type = SDL_CONTROLLERDEVICEADDED;
-            event.cdevice.which = i;
+            event.gdevice.type = SDL_EVENT_GAMEPAD_ADDED;
+            event.gdevice.which = joystick;
             SDL_PushEvent(&event);
         }
     }
+
+    SDL_free(joysticks);
+}
+
+static void
+set_terminal_title_with_prefix(const char *value) {
+    char title[128];
+    memcpy(title, "scrcpy - ", 9);
+    size_t trunc_len = sc_str_utf8_truncation_index(value, 128 - 9 - 1);
+    assert(trunc_len <= 128 - 9 - 1);
+    memcpy(&title[9], value, trunc_len);
+    title[9 + trunc_len] = '\0';
+    sc_term_set_title(title);
 }
 
 enum scrcpy_exit_code
@@ -487,8 +379,7 @@ scrcpy(struct scrcpy_options *options)
     }
 
     // Minimal SDL initialization
-    if (SDL_Init(SDL_INIT_EVENTS))
-    {
+    if (!SDL_Init(SDL_INIT_EVENTS)) {
         LOGE("Could not initialize SDL: %s", SDL_GetError());
         return SCRCPY_EXIT_FAILURE;
     }
@@ -519,6 +410,7 @@ scrcpy(struct scrcpy_options *options)
     bool timeout_started = false;
     bool preview_sender_initialized = false;
     bool preview_sender_started = false;
+    bool disconnected = false;
 
     struct sc_acksync *acksync = NULL;
 
@@ -539,6 +431,7 @@ scrcpy(struct scrcpy_options *options)
         .port_range = options->port_range,
         .tunnel_host = options->tunnel_host,
         .tunnel_port = options->tunnel_port,
+        .min_size_alignment = options->min_size_alignment,
         .max_size = options->max_size,
         .video_bit_rate = options->video_bit_rate,
         .audio_bit_rate = options->audio_bit_rate,
@@ -574,8 +467,14 @@ scrcpy(struct scrcpy_options *options)
         .power_on = options->power_on,
         .kill_adb_on_close = options->kill_adb_on_close,
         .camera_high_speed = options->camera_high_speed,
+        .camera_torch = options->camera_torch,
+        .camera_zoom = options->camera_zoom,
         .vd_destroy_content = options->vd_destroy_content,
         .vd_system_decorations = options->vd_system_decorations,
+        .keep_active = options->keep_active,
+        .flex_display = options->flex_display,
+        .ignore_video_encoder_constraints =
+            options->ignore_video_encoder_constraints,
         .list = options->list,
     };
 
@@ -589,12 +488,25 @@ scrcpy(struct scrcpy_options *options)
         return SCRCPY_EXIT_FAILURE;
     }
 
-    if (options->window)
-    {
-        // Set hints before starting the server thread to avoid race conditions
-        // in SDL
-        sdl_set_hints(options->render_driver);
+#ifdef _WIN32
+    sdl_configure_ctrl_c_windows();
+#endif
+
+    // Set hints before starting the server thread to avoid race conditions in
+    // SDL
+    sc_sdl_set_hints(options->render_driver, options->disable_screensaver);
+
+#ifdef _WIN32
+    // Windows-specific optimizations for better performance
+    if (!options->render_driver) {
+        if (!SDL_SetHint(SDL_HINT_RENDER_DRIVER, "direct3d11")) {
+            LOGW("Could not set Direct3D11 render driver");
+        }
     }
+    if (!SDL_SetHint(SDL_HINT_RENDER_BATCHING, "1")) {
+        LOGW("Could not enable render batching");
+    }
+#endif
 
     if (!sc_server_start(&s->server))
     {
@@ -621,8 +533,7 @@ scrcpy(struct scrcpy_options *options)
         // --no-video-playback is passed so that clipboard synchronization
         // still works.
         // <https://github.com/Genymobile/scrcpy/issues/4418>
-        if (SDL_Init(SDL_INIT_VIDEO))
-        {
+        if (!SDL_Init(SDL_INIT_VIDEO)) {
             // If it fails, it is an error only if video playback is enabled
             if (options->video_playback)
             {
@@ -636,25 +547,19 @@ scrcpy(struct scrcpy_options *options)
         }
     }
 
-    if (options->audio_playback)
-    {
-        if (SDL_Init(SDL_INIT_AUDIO))
-        {
+    if (options->audio_playback) {
+        if (!SDL_Init(SDL_INIT_AUDIO)) {
             LOGE("Could not initialize SDL audio: %s", SDL_GetError());
             goto end;
         }
     }
 
-    if (options->gamepad_input_mode != SC_GAMEPAD_INPUT_MODE_DISABLED)
-    {
-        if (SDL_Init(SDL_INIT_GAMECONTROLLER))
-        {
+    if (options->gamepad_input_mode != SC_GAMEPAD_INPUT_MODE_DISABLED) {
+        if (!SDL_Init(SDL_INIT_GAMEPAD)) {
             LOGE("Could not initialize SDL gamepad: %s", SDL_GetError());
             goto end;
         }
     }
-
-    sdl_configure(options->video_playback, options->disable_screensaver);
 
     // Await for server without blocking Ctrl+C handling
     bool connected;
@@ -677,16 +582,22 @@ scrcpy(struct scrcpy_options *options)
     // It is necessarily initialized here, since the device is connected
     struct sc_server_info *info = &s->server.info;
 
+    const char *window_title =
+        options->window_title ? options->window_title : info->device_name;
+    assert(window_title);
+
+    if (options->update_terminal_title) {
+        set_terminal_title_with_prefix(window_title);
+    }
+
     const char *serial = s->server.serial;
     assert(serial);
 
     struct sc_file_pusher *fp = NULL;
 
-    if (options->video_playback && options->control)
-    {
-        if (!sc_file_pusher_init(&s->file_pusher, serial,
-                                 options->push_target))
-        {
+    if (options->window && options->control) {
+        if (!sc_file_pusher_init(&s->file_pusher, &s->controller, serial,
+                                 options->push_target)) {
             goto end;
         }
         fp = &s->file_pusher;
@@ -957,17 +868,15 @@ scrcpy(struct scrcpy_options *options)
     // There is a controller if and only if control is enabled
     assert(options->control == !!controller);
 
-    if (options->window)
-    {
-        const char *window_title =
-            options->window_title ? options->window_title : info->device_name;
-
+    if (options->window) {
         // LinkAndroid: Screen needs video=true if either playback or preview is enabled
         bool screen_needs_video = options->video_playback ||
                                   (options->linkandroid_server && options->linkandroid_preview_interval > 0);
 
         struct sc_screen_params screen_params = {
             .video = screen_needs_video,
+            .camera = options->video_source == SC_VIDEO_SOURCE_CAMERA,
+            .flex_display = options->flex_display,
             .controller = controller,
             .fp = fp,
             .kp = kp,
@@ -983,7 +892,10 @@ scrcpy(struct scrcpy_options *options)
             .window_y = options->window_y,
             .window_width = options->window_width,
             .window_height = options->window_height,
+            .background_color = options->background_color,
+            .window_aspect_ratio_lock = options->window_aspect_ratio_lock,
             .window_borderless = options->window_borderless,
+            .render_fit = options->render_fit,
             .orientation = options->display_orientation,
             .mipmaps = options->mipmaps,
             .fullscreen = options->fullscreen,
@@ -993,15 +905,13 @@ scrcpy(struct scrcpy_options *options)
             .hide_window = !options->video_playback && options->linkandroid_preview_interval > 0,
         };
 
-        if (!sc_screen_init(&s->screen, &screen_params))
-        {
+        if (!sc_screen_init(&s->screen, &screen_params)) {
             goto end;
         }
         screen_initialized = true;
 
         // LinkAndroid: Initialize WebSocket client for event forwarding
-        if (options->linkandroid_server)
-        {
+        if (options->linkandroid_server) {
             sc_input_manager_init_websocket(&s->screen.im, options->linkandroid_server);
         }
 
@@ -1010,17 +920,14 @@ scrcpy(struct scrcpy_options *options)
         bool need_screen_frames = options->video_playback ||
                                   (options->linkandroid_server && options->linkandroid_preview_interval > 0);
 
-        if (need_screen_frames)
-        {
+        if (need_screen_frames) {
             struct sc_frame_source *src = &s->video_decoder.frame_source;
-            if (options->video_buffer)
-            {
-                sc_delay_buffer_init(&s->video_buffer,
-                                     options->video_buffer, true);
-                sc_frame_source_add_sink(src, &s->video_buffer.frame_sink);
-                src = &s->video_buffer.frame_source;
+            if (options->video_buffer) {
+                sc_video_regulator_init(&s->video_regulator,
+                                        options->video_buffer, true);
+                sc_frame_source_add_sink(src, &s->video_regulator.frame_sink);
+                src = &s->video_regulator.frame_source;
             }
-
             sc_frame_source_add_sink(src, &s->screen.frame_sink);
         }
     }
@@ -1073,11 +980,11 @@ scrcpy(struct scrcpy_options *options)
         }
 
         struct sc_frame_source *src = &s->video_decoder.frame_source;
-        if (options->v4l2_buffer)
-        {
-            sc_delay_buffer_init(&s->v4l2_buffer, options->v4l2_buffer, true);
-            sc_frame_source_add_sink(src, &s->v4l2_buffer.frame_sink);
-            src = &s->v4l2_buffer.frame_source;
+        if (options->v4l2_buffer) {
+            sc_video_regulator_init(&s->v4l2_regulator, options->v4l2_buffer,
+                                    true);
+            sc_frame_source_add_sink(src, &s->v4l2_regulator.frame_sink);
+            src = &s->v4l2_regulator.frame_source;
         }
 
         sc_frame_source_add_sink(src, &s->v4l2_sink.frame_sink);
@@ -1187,16 +1094,12 @@ scrcpy(struct scrcpy_options *options)
     }
 
     ret = event_loop(s, options->window);
-    terminate_event_loop();
-    LOGD("quit...");
 
-    if (options->video_playback)
-    {
-        // Close the window immediately on closing, because screen_destroy()
-        // may only be called once the video demuxer thread is joined (it may
-        // take time)
-        sc_screen_hide_window(&s->screen);
-    }
+    // Reject all new runnables, and execute the pending ones now
+    // (they could access memory that will be cleaned up below)
+    sc_main_thread_stop();
+
+    disconnected = ret == SCRCPY_EXIT_DISCONNECTED;
 
 end:
     // LinkAndroid: Stop preview sender before other cleanup
@@ -1213,26 +1116,9 @@ end:
     // The demuxer is not stopped explicitly, because it will stop by itself on
     // end-of-stream
 #ifdef HAVE_USB
-    if (aoa_hid_initialized)
-    {
-        if (keyboard_aoa_initialized)
-        {
-            sc_keyboard_aoa_destroy(&s->keyboard_aoa);
-        }
-        if (mouse_aoa_initialized)
-        {
-            sc_mouse_aoa_destroy(&s->mouse_aoa);
-        }
-        if (gamepad_aoa_initialized)
-        {
-            sc_gamepad_aoa_destroy(&s->gamepad_aoa);
-        }
+    if (aoa_hid_initialized) {
         sc_aoa_stop(&s->aoa);
         sc_usb_stop(&s->usb);
-    }
-    if (acksync)
-    {
-        sc_acksync_destroy(acksync);
     }
 #endif
     if (controller_started)
@@ -1258,8 +1144,18 @@ end:
         sc_server_stop(&s->server);
     }
 
-    if (timeout_started)
-    {
+    if (screen_initialized) {
+        if (disconnected) {
+            sc_screen_handle_disconnection(&s->screen);
+        }
+        LOGD("Quit...");
+
+        // Close the window immediately, because sc_screen_destroy() may only be
+        // called once the video demuxer thread is joined (it may take time)
+        sc_screen_hide_window(&s->screen);
+    }
+
+    if (timeout_started) {
         sc_timeout_join(&s->timeout);
     }
     if (timeout_initialized)
@@ -1294,6 +1190,19 @@ end:
         sc_usb_join(&s->usb);
         sc_usb_disconnect(&s->usb);
         sc_usb_destroy(&s->usb);
+
+        if (keyboard_aoa_initialized) {
+            sc_keyboard_aoa_destroy(&s->keyboard_aoa);
+        }
+        if (mouse_aoa_initialized) {
+            sc_mouse_aoa_destroy(&s->mouse_aoa);
+        }
+        if (gamepad_aoa_initialized) {
+            sc_gamepad_aoa_destroy(&s->gamepad_aoa);
+        }
+    }
+    if (acksync) {
+        sc_acksync_destroy(acksync);
     }
 #endif
 

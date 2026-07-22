@@ -134,36 +134,106 @@ wss.on('connection', (ws, req) => {
 
   }, 3000);
 
+  // Track the latest preview frame (PNG binary data)
+  let latestPreviewFrame = null;
+  let screenshotIndex = 0;
+
   ws.on('message', (data) => {
+    // Detect binary messages (preview frames) vs text messages (JSON events)
+    if (data instanceof Buffer || data instanceof ArrayBuffer) {
+      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      // Preview frames are PNG data (starting with PNG header \x89PNG)
+      if (buf.length > 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
+        latestPreviewFrame = buf;
+        console.log(`\r[${new Date().toISOString()}] Preview frame received: ${(buf.length / 1024).toFixed(0)} KB`);
+        return;
+      }
+      // Other binary data — ignore
+      return;
+    }
+
     try {
       const message = data.toString();
       const event = JSON.parse(message);
       // Log with color coding based on event type
-      console.log(`\n[${new Date().toISOString()}] Received Event:${JSON.stringify(event)}`);
+      if (event.type !== 'panel_button_click') {
+        // Avoid spamming the console with panel button click logs (they get their own section)
+        console.log(`\n[${new Date().toISOString()}] Received Event:${JSON.stringify(event)}`);
+      }
       if (event.type === 'ready') {
         console.log('\n[INFO] Sending panel configuration with buttons...');
         ws.send(JSON.stringify(panelConfig));
         console.log('[INFO] Panel configuration sent with', panelConfig.data.buttons.length, 'buttons');
       } else if (event.type === 'panel_button_click') {
-        if ('follow' === event.data.id) {
-          // 切换跟随按钮状态（如果使用文字模式）
+
+        // Helper: send a key event (down + up) to the device
+        function sendKey(keycode) {
+          console.log(`  → Injecting keycode ${keycode}`);
+          ws.send(JSON.stringify({
+            type: 'key', data: { action: 'down', keycode }
+          }));
+          setTimeout(() => {
+            ws.send(JSON.stringify({
+              type: 'key', data: { action: 'up', keycode }
+            }));
+          }, 50);
+        }
+
+        const btnId = event.data.id;
+
+        // === System navigation buttons (inject Android key events) ===
+        if (btnId === 'home') {
+          console.log('\n[INFO] Home button clicked → injecting KEYCODE_HOME');
+          sendKey(3); // KEYCODE_HOME
+        } else if (btnId === 'back') {
+          console.log('\n[INFO] Back button clicked → injecting KEYCODE_BACK');
+          sendKey(4); // KEYCODE_BACK
+        } else if (btnId === 'recent') {
+          console.log('\n[INFO] Recent button clicked → injecting KEYCODE_APP_SWITCH');
+          sendKey(187); // KEYCODE_APP_SWITCH
+        } else if (btnId === 'volume_up') {
+          console.log('\n[INFO] Volume+ button clicked → injecting KEYCODE_VOLUME_UP');
+          sendKey(24); // KEYCODE_VOLUME_UP
+        } else if (btnId === 'volume_down') {
+          console.log('\n[INFO] Volume- button clicked → injecting KEYCODE_VOLUME_DOWN');
+          sendKey(25); // KEYCODE_VOLUME_DOWN
+        } else if (btnId === 'screenshot') {
+          const fs = require('fs');
+          const path = require('path');
+          if (latestPreviewFrame) {
+            screenshotIndex++;
+            const filename = `screenshot_${String(screenshotIndex).padStart(3, '0')}.png`;
+            const filepath = path.join(process.cwd(), filename);
+            fs.writeFileSync(filepath, latestPreviewFrame);
+            console.log(`\n[INFO] Screenshot saved: ${filepath} (${(latestPreviewFrame.length / 1024).toFixed(0)} KB)`);
+
+            // Also try to trigger an immediate preview capture by re-sending the panel config
+            // (this is a client-side trigger hint)
+          } else {
+            console.log(`\n[INFO] Screenshot button clicked but no preview frame available yet.
+  Preview frames are sent every second by scrcpy. Please wait for a preview frame first.`);
+          }
+
+        // === Special buttons (custom server actions) ===
+        } else if (btnId === 'quit') {
+          console.log('\n[INFO] Quit button clicked, sending quit command to scrcpy...');
+          ws.send(JSON.stringify({ type: 'quit' }));
+          console.log('[INFO] Quit command sent, scrcpy should exit gracefully');
+        } else if (btnId === 'follow') {
+          // 切换跟随按钮状态（图标模式由客户端处理）
           const followBtn = panelConfig.data.buttons.find(b => b.id === 'follow');
           if (followBtn.icon === 'follow') {
             followBtn.icon = 'follow_active';
           } else {
             followBtn.icon = 'follow';
           }
-          // 图标模式下状态切换由客户端处理
+          console.log(`\n[INFO] Follow button toggled to: ${followBtn.icon}`);
           ws.send(JSON.stringify(panelConfig));
-        } else if ('quit' === event.data.id) {
-          console.log('\n[INFO] Quit button clicked, sending quit command to scrcpy...');
-          ws.send(JSON.stringify({ type: 'quit' }));
-          console.log('[INFO] Quit command sent, scrcpy should exit gracefully');
-        } else if ('active' === event.data.id) {
+        } else if (btnId === 'active') {
           console.log('\n[INFO] Active button clicked, sending active command to scrcpy...');
           ws.send(JSON.stringify({ type: 'active' }));
           console.log('[INFO] Active command sent, scrcpy window should be brought to front');
-        } else if ('toggle_top' === event.data.id) {
+        } else if (btnId === 'toggle_top') {
           // 切换置顶按钮状态
           const topBtn = panelConfig.data.buttons.find(b => b.id === 'toggle_top');
           let isEnabled = false;

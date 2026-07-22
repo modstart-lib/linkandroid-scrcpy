@@ -25,9 +25,12 @@ app/deps/libwebsockets.sh linux native static
 DEPS_INSTALL_DIR="$PWD/app/deps/work/install/linux-native-static"
 ADB_INSTALL_DIR="$PWD/app/deps/work/install/adb-linux"
 
+# Never fall back to system libs
+unset PKG_CONFIG_PATH
+export PKG_CONFIG_LIBDIR="$DEPS_INSTALL_DIR/lib/pkgconfig"
+
 rm -rf "$LINUX_BUILD_DIR"
 meson setup "$LINUX_BUILD_DIR" \
-    --pkg-config-path="$DEPS_INSTALL_DIR/lib/pkgconfig" \
     -Dc_args="-I$DEPS_INSTALL_DIR/include" \
     -Dc_link_args="-L$DEPS_INSTALL_DIR/lib" \
     --buildtype=release \
@@ -41,9 +44,12 @@ ninja -C "$LINUX_BUILD_DIR"
 # Group intermediate outputs into a 'dist' directory
 mkdir -p "$LINUX_BUILD_DIR/dist"
 cp "$LINUX_BUILD_DIR"/app/scrcpy "$LINUX_BUILD_DIR/dist/"
+cp app/data/scrcpy.png "$LINUX_BUILD_DIR/dist/"
 cp app/data/icon.png "$LINUX_BUILD_DIR/dist/"
 cp app/data/font.ttf "$LINUX_BUILD_DIR/dist/"
+cp app/data/disconnected.png "$LINUX_BUILD_DIR/dist/"
 cp app/scrcpy.1 "$LINUX_BUILD_DIR/dist/"
+cp LICENSE "$LINUX_BUILD_DIR/dist"
 # Copy panel button icons
 for icon in back.png follow.png follow_active.png home.png quit.png screenshot.png task.png top.png top_active.png v-minus.png v-plus.png; do
     if [ -f "app/data/$icon" ]; then

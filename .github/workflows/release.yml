@@ -224,7 +224,7 @@ jobs:
         run: |
             brew update
             brew install meson ninja nasm pkg-config automake autoconf libtool \
-                         openssl@3 libiconv sdl2_ttf zlib
+                         openssl@3 libiconv zlib
 
       - name: Build (Static)
         env:
@@ -269,7 +269,7 @@ jobs:
         run: |
             brew update
             brew install meson ninja nasm pkg-config automake autoconf libtool \
-                         openssl@3 libiconv sdl2_ttf zlib
+                         openssl@3 libiconv zlib
 
       - name: Build (Static)
         env:

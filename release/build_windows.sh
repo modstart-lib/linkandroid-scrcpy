@@ -60,12 +60,8 @@ cp app/data/font.ttf "$WINXX_BUILD_DIR/dist/"
 cp app/data/disconnected.png "$WINXX_BUILD_DIR/dist/"
 cp app/data/open_a_terminal_here.bat "$WINXX_BUILD_DIR/dist/"
 cp LICENSE "$WINXX_BUILD_DIR/dist/LICENSE.txt"
-# Copy panel button icons
-for icon in back.png follow.png follow_active.png home.png quit.png screenshot.png task.png top.png top_active.png v-minus.png v-plus.png; do
-    if [ -f "app/data/$icon" ]; then
-        cp "app/data/$icon" "$WINXX_BUILD_DIR/dist/"
-    fi
-done
+# Copy panel button icons (all PNGs from app/data)
+cp app/data/*.png "$WINXX_BUILD_DIR/dist/"
 # Copy DLL files if they exist (they won't exist for static builds)
 if ls "$DEPS_INSTALL_DIR"/bin/*.dll 1> /dev/null 2>&1; then
     cp "$DEPS_INSTALL_DIR"/bin/*.dll "$WINXX_BUILD_DIR/dist/"

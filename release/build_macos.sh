@@ -63,12 +63,8 @@ cp app/data/font.ttf "$MACOS_BUILD_DIR/dist/"
 cp app/data/disconnected.png "$MACOS_BUILD_DIR/dist/"
 cp app/scrcpy.1 "$MACOS_BUILD_DIR/dist/"
 cp LICENSE "$MACOS_BUILD_DIR/dist"
-# Copy panel button icons
-for icon in back.png follow.png follow_active.png home.png quit.png screenshot.png task.png top.png top_active.png v-minus.png v-plus.png; do
-    if [ -f "app/data/$icon" ]; then
-        cp "app/data/$icon" "$MACOS_BUILD_DIR/dist/"
-    fi
-done
+# Copy panel button icons (all PNGs from app/data)
+cp app/data/*.png "$MACOS_BUILD_DIR/dist/"
 cp -r "$ADB_INSTALL_DIR"/. "$MACOS_BUILD_DIR/dist/"
 
 # Code sign the binary to avoid macOS security policy issues

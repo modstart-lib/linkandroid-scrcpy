@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- 置顶 active: Pushpin / thumbtack in red -->
+  <circle cx="50" cy="20" r="11" fill="none" stroke="#D72008" stroke-width="5"/>
+  <rect x="44" y="28" width="12" height="34" rx="3" fill="none" stroke="#D72008" stroke-width="5"/>
+  <polygon points="42,62 58,62 50,80" fill="#D72008"/>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Task/recents button - thicker border -->
+  <rect x="12" y="10" width="76" height="80" rx="8" ry="8" fill="none" stroke="white" stroke-width="8" stroke-linejoin="round"/>
+  <!-- Three horizontal lines (wider) -->
+  <rect x="24" y="28" width="52" height="6" rx="3" fill="white"/>
+  <rect x="24" y="44" width="52" height="6" rx="3" fill="white"/>
+  <rect x="24" y="60" width="52" height="6" rx="3" fill="white"/>
+</svg>

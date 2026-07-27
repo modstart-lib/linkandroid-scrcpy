@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- X mark - thicker crossing lines -->
+  <line x1="25" y1="25" x2="75" y2="75" stroke="white" stroke-width="11" stroke-linecap="round"/>
+  <line x1="75" y1="25" x2="25" y2="75" stroke="white" stroke-width="11" stroke-linecap="round"/>
+</svg>

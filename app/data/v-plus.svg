@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Volume speaker body -->
+  <polygon points="37,35 50,35 66,18 66,82 50,65 37,65" fill="none" stroke="white" stroke-width="6" stroke-linejoin="round"/>
+  <!-- Sound waves -->
+  <path d="M18,42 Q26,50 18,58" fill="none" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <path d="M8,37 Q20,50 8,63" fill="none" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <!-- Plus sign horizontal -->
+  <rect x="67" y="47" width="26" height="7" rx="3.5" fill="white"/>
+  <!-- Plus sign vertical -->
+  <rect x="77" y="38" width="7" height="26" rx="3.5" fill="white"/>
+</svg>

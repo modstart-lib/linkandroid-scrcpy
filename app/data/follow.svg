@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- 群控: One master phone above, three slave phones below -->
+  <!-- Master phone (top center) -->
+  <rect x="33" y="4" width="34" height="44" rx="4" ry="4" fill="none" stroke="white" stroke-width="4"/>
+  <rect x="37" y="10" width="26" height="32" rx="1.5" ry="1.5" fill="none" stroke="white" stroke-width="2" opacity="0.4"/>
+  
+  <!-- Connection lines from master to slaves -->
+  <line x1="40" y1="48" x2="18" y2="56" stroke="white" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.5"/>
+  <line x1="50" y1="48" x2="50" y2="56" stroke="white" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.5"/>
+  <line x1="60" y1="48" x2="82" y2="56" stroke="white" stroke-width="1.5" stroke-dasharray="2,2" opacity="0.5"/>
+  
+  <!-- Slave phone 1 (left) -->
+  <rect x="8" y="54" width="22" height="40" rx="3" ry="3" fill="none" stroke="white" stroke-width="3.5"/>
+  <rect x="11" y="58" width="16" height="30" rx="1" ry="1" fill="none" stroke="white" stroke-width="1.5" opacity="0.4"/>
+  
+  <!-- Slave phone 2 (center) -->
+  <rect x="39" y="54" width="22" height="40" rx="3" ry="3" fill="none" stroke="white" stroke-width="3.5"/>
+  <rect x="42" y="58" width="16" height="30" rx="1" ry="1" fill="none" stroke="white" stroke-width="1.5" opacity="0.4"/>
+  
+  <!-- Slave phone 3 (right) -->
+  <rect x="70" y="54" width="22" height="40" rx="3" ry="3" fill="none" stroke="white" stroke-width="3.5"/>
+  <rect x="73" y="58" width="16" height="30" rx="1" ry="1" fill="none" stroke="white" stroke-width="1.5" opacity="0.4"/>
+</svg>

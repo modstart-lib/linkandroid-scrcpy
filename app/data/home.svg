@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Simplified house -->
+  <!-- Roof -->
+  <polyline points="14,44 50,8 86,44" fill="none" stroke="white" stroke-width="6" stroke-linejoin="round"/>
+  <!-- Walls -->
+  <rect x="18" y="42" width="64" height="48" fill="none" stroke="white" stroke-width="6" stroke-linejoin="round"/>
+  <!-- Door -->
+  <rect x="40" y="58" width="20" height="32" rx="2" fill="none" stroke="white" stroke-width="5"/>
+</svg>

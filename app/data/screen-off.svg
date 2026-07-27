@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Simplified phone screen-off -->
+  <!-- Phone body -->
+  <rect x="25" y="4" width="50" height="92" rx="6" ry="6" fill="none" stroke="white" stroke-width="4.5"/>
+  <!-- Screen area (off/empty) -->
+  <rect x="30" y="12" width="40" height="72" rx="1.5" ry="1.5" fill="none" stroke="white" stroke-width="1.5" opacity="0.3"/>
+</svg>

@@ -26,6 +26,13 @@ const wss = new WebSocketServer({
   path: PATH
 });
 
+// Generate a random 8-char hex message ID for request/response pairing
+function generateId() {
+  return Array.from({ length: 8 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join('');
+}
+
 console.log(`\n==============================================`);
 console.log(`LinkAndroid Test WebSocket Server`);
 console.log(`==============================================`);
@@ -36,6 +43,7 @@ console.log(`==============================================\n`);
 
 const panelConfig = {
   type: 'panel',
+  id: generateId(),
   data: {
     buttons: [
       { id: 'home', icon: 'home' },
@@ -130,7 +138,7 @@ wss.on('connection', (ws, req) => {
     // `
     //     playbackEvents(rawLogs.split('\n').filter(line => line.trim() !== ''));
 
-    ws.send(JSON.stringify({ type: 'active' }));
+    ws.send(JSON.stringify({ type: 'active', id: generateId() }));
 
   }, 3000);
 
@@ -168,13 +176,15 @@ wss.on('connection', (ws, req) => {
 
         // Helper: send a key event (down + up) to the device
         function sendKey(keycode) {
-          console.log(`  → Injecting keycode ${keycode}`);
+          const id_down = generateId();
+          const id_up = generateId();
+          console.log(`  → Injecting keycode ${keycode} (id=${id_down})`);
           ws.send(JSON.stringify({
-            type: 'key', data: { action: 'down', keycode }
+            type: 'key', id: id_down, data: { action: 'down', keycode }
           }));
           setTimeout(() => {
             ws.send(JSON.stringify({
-              type: 'key', data: { action: 'up', keycode }
+              type: 'key', id: id_up, data: { action: 'up', keycode }
             }));
           }, 50);
         }
@@ -217,7 +227,7 @@ wss.on('connection', (ws, req) => {
         // === Special buttons (custom server actions) ===
         } else if (btnId === 'quit') {
           console.log('\n[INFO] Quit button clicked, sending quit command to scrcpy...');
-          ws.send(JSON.stringify({ type: 'quit' }));
+          ws.send(JSON.stringify({ type: 'quit', id: generateId() }));
           console.log('[INFO] Quit command sent, scrcpy should exit gracefully');
         } else if (btnId === 'follow') {
           // 切换跟随按钮状态（图标模式由客户端处理）
@@ -228,10 +238,11 @@ wss.on('connection', (ws, req) => {
             followBtn.icon = 'follow';
           }
           console.log(`\n[INFO] Follow button toggled to: ${followBtn.icon}`);
+          panelConfig.id = generateId();
           ws.send(JSON.stringify(panelConfig));
         } else if (btnId === 'active') {
           console.log('\n[INFO] Active button clicked, sending active command to scrcpy...');
-          ws.send(JSON.stringify({ type: 'active' }));
+          ws.send(JSON.stringify({ type: 'active', id: generateId() }));
           console.log('[INFO] Active command sent, scrcpy window should be brought to front');
         } else if (btnId === 'toggle_top') {
           // 切换置顶按钮状态
@@ -250,11 +261,13 @@ wss.on('connection', (ws, req) => {
             isEnabled = topBtn._enabled || false;
             topBtn._enabled = !isEnabled;
           }
+          panelConfig.id = generateId();
           ws.send(JSON.stringify(panelConfig));
           // 发送置顶命令
           console.log('\n[INFO] Top button clicked, sending top command to scrcpy...');
           ws.send(JSON.stringify({
             type: 'top',
+            id: generateId(),
             data: {
               enable: !isEnabled
             }

@@ -82,6 +82,9 @@ extern struct la_websocket_client *g_websocket_client;
 extern uint16_t g_device_width;
 extern uint16_t g_device_height;
 
+// Track screen power state (on/off) for WebSocket query support
+extern bool g_screen_power_on;
+
 // Initialize WebSocket client for event forwarding
 void
 sc_input_manager_init_websocket(struct sc_input_manager *im, const char *server_url);

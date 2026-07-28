@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <pthread.h>
 #include <libwebsockets.h>
 #include <SDL3/SDL_log.h>
@@ -360,6 +361,27 @@ static void *websocket_thread(void *arg)
     return NULL;
 }
 
+// Generate a random hex message ID for request/response pairing
+// Thread-safe: uses a mutex-protected LCG if available, otherwise a simple counter
+static void
+generate_msg_id(char *buf, size_t buf_size) {
+    static pthread_mutex_t id_mutex = PTHREAD_MUTEX_INITIALIZER;
+    static uint32_t counter = 0;
+
+    pthread_mutex_lock(&id_mutex);
+    if (counter == 0) {
+        // Seed the counter with current time and lower bits of address for variety
+        counter = ((uint32_t)(time(NULL) & 0x7FFFFFFF) ^ (uint32_t)(uintptr_t)buf);
+        if (counter == 0) counter = 1;
+    }
+    // Advance with an LCG to generate pseudo-random sequence
+    counter = counter * 1103515245 + 12345;
+    uint32_t id = counter;
+    pthread_mutex_unlock(&id_mutex);
+
+    snprintf(buf, buf_size, "%08x", id);
+}
+
 // Helper function to serialize control message to JSON
 static char *
 serialize_event_to_json(const struct sc_control_msg *msg,
@@ -374,6 +396,10 @@ serialize_event_to_json(const struct sc_control_msg *msg,
         return NULL;
     }
 
+    // Generate a unique message ID for request/response pairing
+    char id_str[9];
+    generate_msg_id(id_str, sizeof(id_str));
+
     switch (msg->type)
     {
     case SC_CONTROL_MSG_TYPE_INJECT_KEYCODE:
@@ -382,10 +408,11 @@ serialize_event_to_json(const struct sc_control_msg *msg,
                                  ? "down"
                                  : "up";
         snprintf(json_str, 512,
-                 "{\"type\":\"key\",\"data\":{\"action\":\"%s\","
+                 "{\"type\":\"key\",\"id\":\"%s\","
+                 "\"data\":{\"action\":\"%s\","
                  "\"keycode\":%d,\"repeat\":%d,\"metastate\":%d,"
                  "\"width\":%u,\"height\":%u}}",
-                 action, msg->inject_keycode.keycode,
+                 id_str, action, msg->inject_keycode.keycode,
                  msg->inject_keycode.repeat, msg->inject_keycode.metastate,
                  device_width, device_height);
         break;
@@ -394,9 +421,10 @@ serialize_event_to_json(const struct sc_control_msg *msg,
     {
         // For text, we need to escape special characters
         snprintf(json_str, 512,
-                 "{\"type\":\"text\",\"data\":{\"text\":\"%s\","
+                 "{\"type\":\"text\",\"id\":\"%s\","
+                 "\"data\":{\"text\":\"%s\","
                  "\"width\":%u,\"height\":%u}}",
-                 msg->inject_text.text, device_width, device_height);
+                 id_str, msg->inject_text.text, device_width, device_height);
         break;
     }
     case SC_CONTROL_MSG_TYPE_INJECT_TOUCH_EVENT:
@@ -429,10 +457,11 @@ serialize_event_to_json(const struct sc_control_msg *msg,
         int y = (int)msg->inject_touch_event.position.point.y;
 
         snprintf(json_str, 512,
-                 "{\"type\":\"%s\",\"data\":{\"pointer_id\":\"%s\","
+                 "{\"type\":\"%s\",\"id\":\"%s\","
+                 "\"data\":{\"pointer_id\":\"%s\","
                  "\"x\":%d,\"y\":%d,\"pressure\":%.6f,"
                  "\"width\":%u,\"height\":%u}}",
-                 type_str, pointer_id_str,
+                 type_str, id_str, pointer_id_str,
                  x, y, msg->inject_touch_event.pressure,
                  device_width, device_height);
         break;
@@ -447,17 +476,19 @@ serialize_event_to_json(const struct sc_control_msg *msg,
         if (msg->inject_scroll_event.hscroll != 0)
         {
             snprintf(json_str, 512,
-                     "{\"type\":\"scroll_h\",\"data\":{\"x\":%d,\"y\":%d,"
+                     "{\"type\":\"scroll_h\",\"id\":\"%s\","
+                     "\"data\":{\"x\":%d,\"y\":%d,"
                      "\"hscroll\":%.6f,\"width\":%u,\"height\":%u}}",
-                     x, y, (float)msg->inject_scroll_event.hscroll,
+                     id_str, x, y, (float)msg->inject_scroll_event.hscroll,
                      device_width, device_height);
         }
         else
         {
             snprintf(json_str, 512,
-                     "{\"type\":\"scroll_v\",\"data\":{\"x\":%d,\"y\":%d,"
+                     "{\"type\":\"scroll_v\",\"id\":\"%s\","
+                     "\"data\":{\"x\":%d,\"y\":%d,"
                      "\"vscroll\":%.6f,\"width\":%u,\"height\":%u}}",
-                     x, y, (float)msg->inject_scroll_event.vscroll,
+                     id_str, x, y, (float)msg->inject_scroll_event.vscroll,
                      device_width, device_height);
         }
         break;
@@ -816,7 +847,12 @@ bool la_websocket_client_send_preview(struct la_websocket_client *client,
         return false;
     }
 
+    // Generate a unique message ID for request/response pairing
+    char id_str[9];
+    generate_msg_id(id_str, sizeof(id_str));
+
     cJSON_AddStringToObject(root, "type", "preview");
+    cJSON_AddStringToObject(root, "id", id_str);
     cJSON_AddStringToObject(root, "format", format);
     cJSON_AddStringToObject(root, "data", image_data);
 

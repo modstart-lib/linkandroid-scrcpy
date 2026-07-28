@@ -23,6 +23,11 @@ struct la_websocket_client *g_websocket_client = NULL;
 uint16_t g_device_width = 0;
 uint16_t g_device_height = 0;
 
+// Track the display power state (on/off) for WebSocket query support
+// Initialized to true (screen on by default)
+// Updated whenever set_display_power() is called
+bool g_screen_power_on = true;
+
 static struct sc_input_manager *g_input_manager = NULL;
 
 // Task data for window operations that must run on main thread
@@ -45,6 +50,10 @@ task_set_always_on_top(void *userdata) {
     sc_screen_set_always_on_top(data->screen, data->enable);
     free(data);
 }
+
+// Forward declaration for screen power control
+static void
+set_display_power(struct sc_input_manager *im, bool on);
 
 static void
 on_websocket_message(const char *json, void *userdata) {
@@ -116,6 +125,69 @@ on_websocket_message(const char *json, void *userdata) {
                 return;
             }
             
+            // Handle screen power control (on/off/query)
+            if (strcmp(type_item->valuestring, "screen_power") == 0) {
+                cJSON *data = cJSON_GetObjectItemCaseSensitive(root, "data");
+                if (data) {
+                    cJSON *action = cJSON_GetObjectItemCaseSensitive(data, "action");
+                    if (cJSON_IsString(action)) {
+                        if (strcmp(action->valuestring, "on") == 0) {
+                            LOGI("WebSocket screen_power on command received");
+                            if (g_input_manager->controller) {
+                                set_display_power(g_input_manager, true);
+                            } else {
+                                LOGW("Controller not ready, cannot turn screen on");
+                            }
+                        } else if (strcmp(action->valuestring, "off") == 0) {
+                            LOGI("WebSocket screen_power off command received");
+                            if (g_input_manager->controller) {
+                                set_display_power(g_input_manager, false);
+                            } else {
+                                LOGW("Controller not ready, cannot turn screen off");
+                            }
+                        } else if (strcmp(action->valuestring, "query") == 0) {
+                            LOGI("WebSocket screen_power query, current state: %s",
+                                 g_screen_power_on ? "on" : "off");
+                            // Extract the id from the request to echo it back
+                            cJSON *req_id = cJSON_GetObjectItemCaseSensitive(root, "id");
+                            const char *request_id = (cJSON_IsString(req_id) && req_id->valuestring)
+                                                         ? req_id->valuestring : NULL;
+                            // Build and send response JSON
+                            cJSON *resp = cJSON_CreateObject();
+                            if (resp) {
+                                cJSON_AddStringToObject(resp, "type", "screen_power");
+                                // Echo back the request id for request/response pairing
+                                if (request_id) {
+                                    cJSON_AddStringToObject(resp, "id", request_id);
+                                }
+                                cJSON *resp_data = cJSON_AddObjectToObject(resp, "data");
+                                if (resp_data) {
+                                    cJSON_AddStringToObject(resp_data, "action", "query");
+                                    cJSON *state = cJSON_AddObjectToObject(resp_data, "state");
+                                    if (state) {
+                                        cJSON_AddBoolToObject(state, "on", g_screen_power_on);
+                                    }
+                                }
+                                char *resp_str = cJSON_PrintUnformatted(resp);
+                                if (resp_str) {
+                                    la_websocket_client_send(g_websocket_client, resp_str);
+                                    free(resp_str);
+                                }
+                                cJSON_Delete(resp);
+                            }
+                        } else {
+                            LOGW("WebSocket screen_power unknown action: %s", action->valuestring);
+                        }
+                    } else {
+                        LOGW("WebSocket screen_power missing 'action' string parameter");
+                    }
+                } else {
+                    LOGW("WebSocket screen_power missing 'data' object");
+                }
+                cJSON_Delete(root);
+                return;
+            }
+
             // Handle panel configuration
             if (strcmp(type_item->valuestring, "panel") == 0) {
                 LOGD("Handling panel configuration");
@@ -384,6 +456,9 @@ set_display_power(struct sc_input_manager *im, bool on) {
     if (!sc_controller_push_msg(im->controller, &msg)) {
         LOGW("Could not request 'set screen power mode'");
     }
+
+    // Track the screen power state for WebSocket query support
+    g_screen_power_on = on;
 }
 
 static void

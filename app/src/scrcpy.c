@@ -1038,6 +1038,9 @@ scrcpy(struct scrcpy_options *options)
         {
             LOGW("Could not request 'set display power'");
         }
+
+        // Update the screen power state tracking for WebSocket query support
+        g_screen_power_on = false;
     }
 
     if (options->time_limit)

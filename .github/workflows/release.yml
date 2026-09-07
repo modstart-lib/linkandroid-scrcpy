@@ -27,7 +27,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Setup JDK
         uses: actions/setup-java@v5
         with:
@@ -50,7 +50,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Setup JDK
         uses: actions/setup-java@v5
         with:
@@ -76,7 +76,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Setup JDK
         uses: actions/setup-java@v5
         with:
@@ -97,7 +97,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Install dependencies
         run: |
           sudo apt update
@@ -141,7 +141,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Install dependencies
         run: |
           sudo apt update
@@ -189,7 +189,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Install dependencies
         run: |
           sudo apt update
@@ -230,7 +230,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Install dependencies
         run: |
           sudo apt update
@@ -263,7 +263,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Install dependencies
         run: |
           sudo apt update
@@ -304,7 +304,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Install dependencies
         run: |
             brew update
@@ -352,7 +352,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Install dependencies
         run: |
             brew update
@@ -395,7 +395,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Download scrcpy-server
         uses: actions/download-artifact@v8
         with:
@@ -434,7 +434,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Download scrcpy-server
         uses: actions/download-artifact@v8
         with:
@@ -473,7 +473,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Download scrcpy-server
         uses: actions/download-artifact@v8
         with:
@@ -512,7 +512,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Download scrcpy-server
         uses: actions/download-artifact@v8
         with:
@@ -551,7 +551,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Download scrcpy-server
         uses: actions/download-artifact@v8
         with:
@@ -590,7 +590,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Download scrcpy-server
         uses: actions/download-artifact@v8
         with:
@@ -634,7 +634,7 @@ jobs:
           GIT_REPO_BASE: ${{ secrets.GIT_REPO_BASE }}
           GIT_HOST: ${{ secrets.GIT_HOST }}
         run: |
-          git clone -b main "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
+          git clone -b master "https://${GIT_USER}:${GIT_PASS}@${GIT_HOST}/${GIT_REPO_BASE}/linkandroid-scrcpy-pro.git" code
       - name: Download scrcpy-server
         uses: actions/download-artifact@v8
         with:

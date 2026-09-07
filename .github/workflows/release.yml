@@ -689,7 +689,7 @@ jobs:
       - name: Report completion
         if: success()
         run: |
-          curl "${{ secrets.REPORT_URL_ME }}?title=✅LinkAndroidScrcpy版本${{ env.VERSION }}已打包"
+          curl "${{ secrets.REPORT_URL_ME }}?title=✅ LinkAndroidScrcpy版本${{ env.VERSION }}已打包"
       - name: Trigger share-binary update
         if: success()
         run: |

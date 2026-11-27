@@ -693,11 +693,39 @@ jobs:
           curl "${{ secrets.REPORT_URL_ME }}?title=$TITLE"
       - name: Trigger share-binary update
         if: success()
+        env:
+          # Passed through env so the token never shows up in the command line
+          TOKEN: ${{ secrets.TOKEN }}
         run: |
-          curl -L \
+          set -u
+
+          # A missing secret would send an empty bearer token and end up as 401
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::TOKEN secret is empty; cannot dispatch share-binary workflow"
+            exit 1
+          fi
+
+          body_file="$(mktemp)"
+          # A successful workflow_dispatch answers 204 No Content; anything else is a failure
+          status=$(curl -sS -o "$body_file" -w '%{http_code}' \
+            -L \
             -X POST \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.REPO_ACTIONS_TOKEN }}" \
+            -H "Authorization: Bearer ${TOKEN}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/modstart-lib/share-binary/actions/workflows/update-and-push.yml/dispatches \
-            -d '{"ref":"main","inputs":{"update_type":"scrcpy"}}'
+            -d '{"ref":"main","inputs":{"update_type":"scrcpy"}}') || {
+            echo "::error::curl failed to reach the GitHub API (exit code $?)"
+            cat "$body_file" || true
+            exit 1
+          }
+          echo "share-binary dispatch HTTP status: ${status}"
+          cat "$body_file" || true
+          rm -f "$body_file"
+
+          if [ "${status}" != "204" ]; then
+            echo "::error::Failed to trigger share-binary update (HTTP ${status})"
+            echo "::error::401/403 usually means TOKEN is invalid, expired or lacks actions:write on modstart-lib/share-binary"
+            exit 1
+          fi
+          echo "share-binary update triggered successfully"
